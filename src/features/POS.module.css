@@ -1,0 +1,127 @@
+.posLayout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 20px;
+}
+
+@media (max-width: 900px) {
+    .posLayout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.products {
+    overflow: hidden;
+}
+
+.filters {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.productCard {
+    padding: 20px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.productCard:hover {
+    transform: translateY(-3px);
+    border-color: var(--primary);
+}
+
+.productIcon {
+    font-size: 36px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.productName {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.productPrice {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--primary);
+}
+
+.productCategory {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+
+.cartBadge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--primary);
+    color: #fff;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cart {
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    max-height: calc(100vh - 200px);
+}
+
+.cartItems {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 16px;
+}
+
+.cartRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.cartFooter {
+    border-top: 2px solid var(--glass-border);
+    padding-top: 16px;
+}
+
+.paymentRow {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.totalRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.totalAmount {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--primary);
+}

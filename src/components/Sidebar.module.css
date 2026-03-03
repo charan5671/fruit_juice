@@ -1,0 +1,161 @@
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 98;
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .overlay {
+        display: block;
+    }
+}
+
+.sidebar {
+    width: var(--sidebar-w);
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 14px;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--glass-border);
+    transition: transform 0.3s ease;
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        width: 260px;
+        transform: translateX(-100%);
+        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-bottom: 28px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background 0.2s;
+}
+
+.brand:hover {
+    background: var(--primary-glow);
+}
+
+.brandIcon {
+    font-size: 28px;
+}
+
+.brandName {
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--primary);
+    line-height: 1.1;
+}
+
+.brandTag {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.nav {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.navBtn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-family: inherit;
+    text-align: left;
+    transition: all 0.15s;
+    width: 100%;
+}
+
+.navBtn:hover {
+    background: var(--primary-glow);
+    color: var(--text);
+}
+
+.navBtn.active {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+}
+
+.navIcon {
+    font-size: 16px;
+    width: 22px;
+    text-align: center;
+}
+
+.rolePicker {
+    padding-top: 16px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.roleLabel {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    padding: 0 4px;
+}
+
+.roleGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+.roleBtn {
+    padding: 6px;
+    border: none;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: capitalize;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    transition: all 0.15s;
+}
+
+.roleBtn:hover {
+    background: var(--primary-glow);
+}
+
+.roleBtn.roleActive {
+    background: var(--primary);
+    color: #fff;
+}
