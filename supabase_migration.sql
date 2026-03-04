@@ -179,64 +179,113 @@ RETURNS BIGINT AS $$
   SELECT id FROM employees WHERE auth_uid = auth.uid()
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
--- ─── AUTO-CONFIRM EMAIL (called during registration to bypass confirmation) ──
-CREATE OR REPLACE FUNCTION auto_confirm_email(p_email TEXT)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE auth.users
-  SET email_confirmed_at = COALESCE(email_confirmed_at, now()),
-      updated_at = now()
-  WHERE email = p_email;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- ─── 🛡️ STANDARD PROFILE TRIGGER ────────────────────────────
+-- This trigger automatically creates an employee record when a user signs up.
+-- It extracts metadata like name and role passed from the client.
 
--- ─── REGISTRATION FUNCTION (bypasses RLS for self-insert) ──
-CREATE OR REPLACE FUNCTION register_employee(
-  p_auth_uid UUID,
-  p_name TEXT,
+-- ─── 🛡️ PROFESSIONAL BREAK-GLASS RECOVERY ────────────────
+-- Secure function to set admin password without email links.
+-- MASTER RECOVERY KEY: FRESH-JUICE-MASTER-RECOVERY-2024
+
+CREATE OR REPLACE FUNCTION public.reset_enterprise_admin(
   p_email TEXT,
-  p_role TEXT DEFAULT 'staff'
-) RETURNS JSONB AS $$
+  p_new_password TEXT,
+  p_recovery_key TEXT
+)
+RETURNS JSONB AS $$
 DECLARE
-  new_id BIGINT;
-  v_status TEXT DEFAULT 'pending';
-  v_role TEXT;
+  v_user_id UUID;
 BEGIN
-  v_role := p_role;
-  
-  -- AUTO-BOOTSTRAP ENTERPRISE ROLES
-  IF p_email = 'admin@freshjuice.in' THEN
-    v_status := 'active'; v_role := 'admin';
-  ELSIF p_email = 'manager@freshjuice.in' THEN
-    v_status := 'active'; v_role := 'manager';
-  ELSIF p_email = 'seller@freshjuice.in' THEN
-    v_status := 'active'; v_role := 'seller';
-  ELSIF p_email = 'staff@freshjuice.in' THEN
-    v_status := 'active'; v_role := 'staff';
+  -- 1. SECURITY CHECK: Verify Master Recovery Key
+  IF p_recovery_key != 'FRESH-JUICE-MASTER-RECOVERY-2024' THEN
+    RETURN jsonb_build_object('error', 'Invalid recovery key');
   END IF;
 
-  INSERT INTO employees (auth_uid, name, email, role, status, join_date, outlet_id)
-  VALUES (p_auth_uid, p_name, p_email, v_role, v_status, to_char(now(), 'YYYY-MM-DD'), 1)
-  RETURNING id INTO new_id;
+  -- 2. TARGET CHECK: Only allow Master Admin
+  IF p_email != 'charanmaddirala111@gmail.com' THEN
+    RETURN jsonb_build_object('error', 'Recovery restricted to Master Admin');
+  END IF;
 
-  -- Notify system about registration
-  INSERT INTO notifications (type, title, message, module, target_role)
-  VALUES ('info', 'System Setup', p_name || ' (' || v_role || ') provisioned as ' || v_status, 'admin', 'admin');
+  -- 3. EXECUTION: Force update password and confirm
+  SELECT id INTO v_user_id FROM auth.users WHERE email = p_email;
+  
+  IF v_user_id IS NULL THEN
+    RETURN jsonb_build_object('error', 'Admin account not found. Please register first.');
+  END IF;
 
-  RETURN jsonb_build_object('id', new_id, 'status', v_status, 'role', v_role);
+  UPDATE auth.users 
+  SET encrypted_password = crypt(p_new_password, gen_salt('bf')),
+      email_confirmed_at = now(),
+      last_sign_in_at = now()
+  WHERE id = v_user_id;
+
+  -- Ensure profile exists and is active
+  INSERT INTO public.employees (auth_uid, email, name, role, status, outlet_id)
+  VALUES (v_user_id, p_email, 'Master Admin', 'admin', 'active', 1)
+  ON CONFLICT (email) DO UPDATE 
+  SET status = 'active', role = 'admin', auth_uid = v_user_id;
+
+  RETURN jsonb_build_object('success', true);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- ─── 🛡️ SYSTEMATIC DUAL-TRIGGER AUTH ARCHITECTURE ────────────────
+CREATE OR REPLACE FUNCTION public.confirm_new_user_before()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.email_confirmed_at := now();
+  NEW.last_sign_in_at := now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.provision_employee_after()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_role TEXT;
+  v_status TEXT;
+  v_name TEXT;
+BEGIN
+  v_name := COALESCE(NEW.raw_user_meta_data->>'name', 'New Employee');
+  v_role := COALESCE(NEW.raw_user_meta_data->>'role', 'seller');
+  v_status := 'pending';
+
+  IF NEW.email = 'charanmaddirala111@gmail.com' THEN
+    v_role := 'admin';
+    v_status := 'active';
+  END IF;
+
+  INSERT INTO public.employees (auth_uid, name, email, role, status, outlet_id)
+  VALUES (NEW.id, v_name, NEW.email, v_role, v_status, 1)
+  ON CONFLICT (email) DO UPDATE 
+  SET auth_uid = EXCLUDED.auth_uid, name = v_name, role = v_role;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_before_insert ON auth.users;
+CREATE TRIGGER on_auth_user_before_insert
+  BEFORE INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.confirm_new_user_before();
+
+DROP TRIGGER IF EXISTS on_auth_user_provision_after ON auth.users;
+CREATE TRIGGER on_auth_user_provision_after
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.provision_employee_after();
+
 -- ─── ATOMIC ORDER FUNCTION (handles stock deduction) ────────
+DROP FUNCTION IF EXISTS create_order(jsonb,numeric,text,bigint,bigint) CASCADE;
 CREATE OR REPLACE FUNCTION create_order(
   p_items JSONB,
   p_total NUMERIC,
   p_payment_method TEXT,
   p_outlet_id BIGINT,
   p_seller_id BIGINT
-) RETURNS BIGINT AS $$
+) RETURNS JSONB AS $$
 DECLARE
   new_order_id BIGINT;
+  res JSONB;
   item_record RECORD;
   ing_record RECORD;
 BEGIN
@@ -246,7 +295,6 @@ BEGIN
   RETURNING id INTO new_order_id;
 
   -- 2. Deduct ingredients
-  -- Expects p_items to have structure: [{"recipeId":1, "quantity":2, "ingredients":[{"ingredientId":1, "amount":0.5}]}]
   FOR item_record IN SELECT * FROM jsonb_array_elements(p_items) LOOP
     FOR ing_record IN SELECT * FROM jsonb_array_elements(item_record.value->'ingredients') LOOP
       UPDATE ingredients
@@ -254,7 +302,6 @@ BEGIN
           last_updated = now()
       WHERE id = (ing_record.value->>'ingredientId')::BIGINT;
       
-      -- Add low stock notification if needed
       INSERT INTO notifications (type, title, message, module, outlet_id)
       SELECT 'warning', 'Low Stock Alert', name || ' is at ' || stock || unit, 'inventory', outlet_id
       FROM ingredients
@@ -266,7 +313,9 @@ BEGIN
   INSERT INTO audit_log (action, user_id, module, details)
   VALUES ('SALE_COMPLETED', p_seller_id, 'pos', 'Order ID: ' || new_order_id || ', Amount: ' || p_total);
 
-  RETURN new_order_id;
+  -- 4. Get full order for response
+  SELECT row_to_json(orders) INTO res FROM orders WHERE id = new_order_id;
+  RETURN res;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

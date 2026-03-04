@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { supabase } from './supabase';
 
 // ── Types ──
-export type Role = 'admin' | 'manager' | 'seller' | 'staff';
+export type Role = 'admin' | 'manager' | 'procurement' | 'seller' | 'staff';
 export type ActiveTab = 'Dashboard' | 'POS' | 'Inventory' | 'Procurement' | 'Workforce' | 'Payroll' | 'Analytics' | 'Notifications' | 'Settings' | 'UserManagement';
 
 export interface Outlet { id: number; name: string; address: string; phone: string; status: string; }
@@ -26,7 +26,7 @@ interface AppState {
 
     setActiveTab: (t: ActiveTab) => void; toggleTheme: () => void; setMobileMenuOpen: (v: boolean) => void;
     initialize: (authUid: string) => Promise<void>; refreshData: () => Promise<void>;
-    completeSale: (items: { recipeId: number; name: string; price: number; quantity: number; ingredients: { ingredientId: number; amount: number }[] }[], paymentMethod: 'cash' | 'card' | 'upi') => Promise<void>;
+    completeSale: (items: { recipeId: number; name: string; price: number; quantity: number; ingredients: { ingredientId: number; amount: number }[] }[], paymentMethod: 'cash' | 'card' | 'upi') => Promise<Order>;
     addStock: (ingredientId: number, amount: number) => Promise<void>;
     createPO: (po: { supplier_id: number; items: { ingredientName: string; quantity: number; unit: string }[]; total_cost: number; notes: string }) => Promise<void>;
     updatePOStatus: (id: number, status: string) => Promise<void>;
@@ -53,7 +53,12 @@ export const useStore = create<AppState>((set, get) => ({
 
         // Get current employee from auth UID
         const { data: emp } = await supabase.from('employees').select('*').eq('auth_uid', authUid).single();
-        const role = (emp?.role || 'staff') as Role;
+
+        // Systematic Override: Ensure Master Admin is ALWAYS admin
+        let role = (emp?.role || 'staff') as Role;
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email === 'charanmaddirala111@gmail.com') role = 'admin';
+
         const defaultTab: ActiveTab = role === 'seller' ? 'POS' : role === 'staff' ? 'Workforce' : 'Dashboard';
 
         set({ initialized: true, theme: saved || 'light', currentEmployeeId: emp?.id || null, currentRole: role, currentName: emp?.name || '', activeTab: defaultTab });
@@ -102,7 +107,7 @@ export const useStore = create<AppState>((set, get) => ({
         const emp = employees.find(e => e.id === currentEmployeeId);
         const total = items.reduce((s, i) => s + i.price * i.quantity, 0);
 
-        const { error } = await supabase.rpc('create_order', {
+        const { data, error } = await supabase.rpc('create_order', {
             p_items: items.map(i => ({ recipeId: i.recipeId, name: i.name, price: i.price, quantity: i.quantity, ingredients: i.ingredients })),
             p_total: total,
             p_payment_method: paymentMethod,
@@ -111,6 +116,7 @@ export const useStore = create<AppState>((set, get) => ({
         });
 
         if (error) throw error;
+        return data as Order;
     },
 
     addStock: async (ingredientId, amount) => {

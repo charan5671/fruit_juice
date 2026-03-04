@@ -23,7 +23,8 @@ const modules: Record<string, React.ComponentType> = {
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   admin: ['Dashboard', 'POS', 'Inventory', 'Procurement', 'Workforce', 'Payroll', 'Analytics', 'Notifications', 'UserManagement', 'Settings'],
   manager: ['Dashboard', 'POS', 'Inventory', 'Procurement', 'Workforce', 'Notifications', 'Settings'],
-  seller: ['POS', 'Inventory', 'Workforce', 'Notifications', 'Settings'],
+  procurement: ['Procurement', 'Inventory', 'Notifications', 'Settings'],
+  seller: ['POS', 'Inventory', 'Notifications', 'Settings'],
   staff: ['Workforce', 'Payroll', 'Notifications', 'Settings'],
 };
 

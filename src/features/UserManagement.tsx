@@ -65,6 +65,7 @@ export default function UserManagement() {
                                         <option value="seller">Seller</option>
                                         <option value="staff">Staff</option>
                                         <option value="manager">Manager</option>
+                                        <option value="procurement">Procurement</option>
                                         <option value="admin">Admin</option>
                                     </select>
                                 </td>
