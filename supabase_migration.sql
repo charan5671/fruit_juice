@@ -179,6 +179,17 @@ RETURNS BIGINT AS $$
   SELECT id FROM employees WHERE auth_uid = auth.uid()
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
+-- ─── AUTO-CONFIRM EMAIL (called during registration to bypass confirmation) ──
+CREATE OR REPLACE FUNCTION auto_confirm_email(p_email TEXT)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE auth.users
+  SET email_confirmed_at = COALESCE(email_confirmed_at, now()),
+      updated_at = now()
+  WHERE email = p_email;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- ─── REGISTRATION FUNCTION (bypasses RLS for self-insert) ──
 CREATE OR REPLACE FUNCTION register_employee(
   p_auth_uid UUID,

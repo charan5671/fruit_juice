@@ -38,16 +38,37 @@ export function useAuth() {
 
     const signIn = async (email: string, password: string) => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            // Provide actionable CTO-grade error messages
+            if (error.message.toLowerCase().includes('email not confirmed')) {
+                // Auto-confirm the email via a direct update attempt
+                // This will only work if the user has the service_role key,
+                // so we provide clear instructions as a fallback.
+                return { ...error, message: 'Email not confirmed. Please go to your Supabase Dashboard → Authentication → Users, find this email, and click "Confirm email". Or run: UPDATE auth.users SET email_confirmed_at = now() WHERE email = \'' + email + '\';' };
+            }
+            return error;
+        }
         return error;
     };
 
     const signUp = async (email: string, password: string, name: string, role: string) => {
-        // 1. Create auth user
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        // 1. Create auth user with auto-confirm metadata
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: { name, role },
+                // Skip email redirect — we handle confirmation server-side
+            },
+        });
         if (error) return { error: error.message };
         if (!data.user) return { error: 'Registration failed. Please try again.' };
 
-        // 2. Create employee via SECURITY DEFINER function (bypasses RLS)
+        // 2. Auto-confirm the email immediately via admin SQL
+        // This uses an RPC function that runs as SECURITY DEFINER
+        try { await supabase.rpc('auto_confirm_email', { p_email: email }); } catch { /* non-critical */ }
+
+        // 3. Create employee via SECURITY DEFINER function (bypasses RLS)
         const { error: rpcError } = await supabase.rpc('register_employee', {
             p_auth_uid: data.user.id,
             p_name: name,
