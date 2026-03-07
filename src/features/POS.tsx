@@ -8,9 +8,13 @@ export default function POS() {
     const [cart, setCart] = useState<{ recipeId: number; name: string; price: number; quantity: number; icon: string; ingredients: { ingredientId: number; amount: number }[] }[]>([]);
     const [payment, setPayment] = useState<'cash' | 'card' | 'upi'>('cash');
     const [filter, setFilter] = useState('All');
-    const [view, setView] = useState<'pos' | 'history'>('pos');
+    const [view, setView] = useState<'pos' | 'history' | 'manage'>('pos');
     const [receipt, setReceipt] = useState<Order | null>(null);
     const receiptRef = useRef<HTMLDivElement>(null);
+
+    // Manage Menu States
+    const { addRecipe, ingredients } = useStore();
+    const [newRecipe, setNewRecipe] = useState({ name: '', price: 100, category: 'Fresh Juices', icon: '🍹', ingId: null as number | null, ingAmount: 1 });
 
     const addToCart = (recipe: typeof recipes[0]) => {
         setCart(prev => {
@@ -139,10 +143,63 @@ export default function POS() {
                 <div style={{ display: 'flex', gap: 6 }}>
                     <button className={`btn btn-sm ${view === 'pos' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('pos')}>🧾 POS</button>
                     <button className={`btn btn-sm ${view === 'history' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('history')}>📋 History</button>
+                    {['admin', 'manager', 'staff'].includes(useStore.getState().currentRole) && (
+                        <button className={`btn btn-sm ${view === 'manage' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('manage')}>⚙️ Manage Menu</button>
+                    )}
                 </div>
             </div>
 
-            {view === 'history' ? (
+            {view === 'manage' ? (
+                <div className="card glass" style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
+                    <h3 style={{ marginBottom: 16 }}>Add New Menu Item</h3>
+                    <form onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (!newRecipe.name || newRecipe.price <= 0 || !newRecipe.ingId) return alert('Please fill all required fields');
+
+                        await addRecipe({
+                            name: newRecipe.name, price: newRecipe.price, icon: newRecipe.icon, category: newRecipe.category,
+                            ingredients: [{ ingredientId: newRecipe.ingId, amount: newRecipe.ingAmount }]
+                        });
+                        alert('Recipe Added Successfully! It is now live across all POS terminals.');
+                        setNewRecipe({ name: '', price: 100, category: 'Fresh Juices', icon: '🍹', ingId: null, ingAmount: 1 });
+                    }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Item Name</label>
+                                <input className="input" required value={newRecipe.name} onChange={e => setNewRecipe({ ...newRecipe, name: e.target.value })} placeholder="e.g. Mango Magic" />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Price (₹)</label>
+                                <input className="input" type="number" required value={newRecipe.price} onChange={e => setNewRecipe({ ...newRecipe, price: Number(e.target.value) })} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Category</label>
+                                <input className="input" required value={newRecipe.category} onChange={e => setNewRecipe({ ...newRecipe, category: e.target.value })} list="categories-list" />
+                                <datalist id="categories-list">
+                                    {categories.filter(c => c !== 'All').map(c => <option key={c} value={c} />)}
+                                </datalist>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Display Icon (Emoji)</label>
+                                <input className="input" required value={newRecipe.icon} onChange={e => setNewRecipe({ ...newRecipe, icon: e.target.value })} />
+                            </div>
+                        </div>
+
+                        <div style={{ padding: 16, border: '1px solid var(--glass-border)', borderRadius: 8, marginBottom: 20 }}>
+                            <h4 style={{ fontSize: 13, marginBottom: 12 }}>Link Main Ingredient (Required for auto-deduction)</h4>
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <select className="input" style={{ flex: 1 }} required value={newRecipe.ingId || ''} onChange={e => setNewRecipe({ ...newRecipe, ingId: Number(e.target.value) })}>
+                                    <option value="">Select ingredient...</option>
+                                    {ingredients.map(ing => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
+                                </select>
+                                <input className="input" type="number" required style={{ width: 100 }} placeholder="Qty" value={newRecipe.ingAmount} onChange={e => setNewRecipe({ ...newRecipe, ingAmount: Number(e.target.value) })} step="0.1" />
+                            </div>
+                        </div>
+
+                        <button className="btn btn-primary" type="submit" style={{ width: '100%' }}>Create & Publish Recipe</button>
+                    </form>
+                </div>
+            ) : view === 'history' ? (
                 <div className="glass" style={{ overflowX: 'auto' }}>
                     <table className="data-table">
                         <thead><tr><th>ID</th><th>Items</th><th>Total</th><th>Payment</th><th>Time</th><th>Receipt</th></tr></thead>

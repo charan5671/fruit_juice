@@ -5,11 +5,28 @@ import { useState } from 'react';
 
 export default function Profile() {
     const { employeeProfile, biometricRegister, biometricAvailable, updatePassword } = useAuth();
-    const { currentName, currentRole } = useStore();
+    const { currentName, currentRole, updateEmployee, currentEmployeeId } = useStore();
     const [bioStatus, setBioStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [passStep, setPassStep] = useState<'idle' | 'changing' | 'success' | 'error'>('idle');
     const [newPass, setNewPass] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
+
+    // Profile Edit States
+    const [isEditing, setIsEditing] = useState(false);
+    const [editData, setEditData] = useState({ name: '', phone: '' });
+
+    const handleEditStart = () => {
+        // @ts-ignore
+        setEditData({ name: employeeProfile?.name || '', phone: employeeProfile?.phone || '' });
+        setIsEditing(true);
+    };
+
+    const handleSaveProfile = async () => {
+        if (currentEmployeeId) {
+            await updateEmployee(currentEmployeeId, editData);
+        }
+        setIsEditing(false);
+    };
 
     const handleRegisterBio = async () => {
         const success = await biometricRegister();
@@ -39,19 +56,39 @@ export default function Profile() {
             <p className="section-subtitle">Account security and personal settings</p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24, marginTop: 20 }}>
-                <div className="card glass" style={{ textAlign: 'center', padding: '40px 24px' }}>
+                <div className="card glass" style={{ textAlign: 'center', padding: '40px 24px', position: 'relative' }}>
+                    {!isEditing && (
+                        <button className="btn btn-sm btn-outline" style={{ position: 'absolute', top: 16, right: 16 }} onClick={handleEditStart}>✎ Edit</button>
+                    )}
+
                     <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 32, fontWeight: 900 }}>
-                        {currentName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                        {employeeProfile?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
                     </div>
-                    <h2 style={{ fontSize: 20, marginBottom: 4 }}>{currentName}</h2>
+
+                    {isEditing ? (
+                        <div style={{ marginBottom: 16 }}>
+                            <input className="input" value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} style={{ textAlign: 'center', fontSize: 20, fontWeight: 700, padding: 8, marginBottom: 8 }} placeholder="Full Name" />
+                        </div>
+                    ) : (
+                        <h2 style={{ fontSize: 20, marginBottom: 4 }}>{employeeProfile?.name}</h2>
+                    )}
+
                     <div className="badge badge-info" style={{ textTransform: 'capitalize', fontSize: 13 }}>{currentRole}</div>
 
-                    <div style={{ marginTop: 24, textAlign: 'left', borderTop: '1px solid var(--glass-border)', paddingTop: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ marginTop: 24, textAlign: 'left', borderTop: '1px solid var(--glass-border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Email</span>
                             <span style={{ fontSize: 13, fontWeight: 600 }}>{employeeProfile?.email}</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Phone</span>
+                            {isEditing ? (
+                                <input className="input" style={{ width: 140, padding: '4px 8px', fontSize: 12 }} value={editData.phone} onChange={e => setEditData({ ...editData, phone: e.target.value })} placeholder="+91 XXXXX" />
+                            ) : (
+                                <span style={{ fontSize: 13, fontWeight: 600 }}>{(employeeProfile as any)?.phone || '—'}</span>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Status</span>
                             <span className="badge badge-success">Active</span>
                         </div>
@@ -60,6 +97,13 @@ export default function Profile() {
                             <span style={{ fontSize: 13, fontWeight: 600 }}>#{employeeProfile?.outlet_id || 1}</span>
                         </div>
                     </div>
+
+                    {isEditing && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+                            <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSaveProfile}>Save Changes</button>
+                            <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setIsEditing(false)}>Cancel</button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="card glass">

@@ -70,17 +70,21 @@ export default function Dashboard() {
                 {orders.length === 0 ? <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>No transactions yet. Complete a sale in POS to see data here.</p> : (
                     <div style={{ overflowX: 'auto' }}>
                         <table className="data-table">
-                            <thead><tr><th>Order ID</th><th>Items</th><th>Amount</th><th>Payment</th><th>Time</th></tr></thead>
+                            <thead><tr><th>Order ID</th><th>Items</th><th>Amount</th><th>Payment</th><th>Date</th><th>Time</th></tr></thead>
                             <tbody>
-                                {orders.slice(0, 5).map(o => (
-                                    <tr key={o.id}>
-                                        <td style={{ fontWeight: 700 }}>#{o.id}</td>
-                                        <td>{o.items.map((i: { name: string }) => i.name).join(', ')}</td>
-                                        <td style={{ fontWeight: 700, color: 'var(--primary)' }}>₹{o.total}</td>
-                                        <td><span className="badge badge-info">{o.payment_method}</span></td>
-                                        <td style={{ color: 'var(--text-secondary)' }}>{new Date(o.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
-                                    </tr>
-                                ))}
+                                {orders.slice(0, 5).map(o => {
+                                    const dateObj = new Date(o.created_at);
+                                    return (
+                                        <tr key={o.id}>
+                                            <td style={{ fontWeight: 700 }}>#{o.id}</td>
+                                            <td>{o.items.map((i: { name: string }) => i.name).join(', ')}</td>
+                                            <td style={{ fontWeight: 700, color: 'var(--primary)' }}>₹{o.total}</td>
+                                            <td><span className="badge badge-info">{o.payment_method}</span></td>
+                                            <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                            <td style={{ fontSize: 13, fontWeight: 600 }}>{dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

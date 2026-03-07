@@ -6,9 +6,13 @@ import { useState, useEffect } from 'react';
 const STATUS_COLORS: Record<string, string> = { draft: 'badge-info', sent: 'badge-info', confirmed: 'badge-warning', 'in-transit': 'badge-warning', delivered: 'badge-success', cancelled: 'badge-danger' };
 
 export default function Procurement() {
-    const { purchaseOrders, suppliers, updatePOStatus, createPO } = useStore();
+    const { purchaseOrders, suppliers, updatePOStatus, createPO, editPO } = useStore();
     const [showForm, setShowForm] = useState(false);
     const [suppId, setSuppId] = useState(suppliers[0]?.id || 1);
+
+    // Edit states
+    const [editPoId, setEditPoId] = useState<number | null>(null);
+    const [editData, setEditData] = useState({ qty: 0, cost: 0 });
 
     // Dynamically get items for selected supplier
     const selectedSupplier = suppliers.find(s => s.id === suppId);
@@ -71,21 +75,52 @@ export default function Procurement() {
                         {purchaseOrders.map(po => {
                             const supp = suppliers.find(s => s.id === po.supplier_id);
                             const items = po.items as { ingredientName: string; quantity: number; unit: string }[];
+                            const firstItem = items[0] || { ingredientName: '', quantity: 0, unit: 'kg' };
+
                             return (
                                 <tr key={po.id}>
                                     <td style={{ fontWeight: 700 }}>#{po.id}</td>
                                     <td>{supp?.name || '—'}</td>
-                                    <td>{items.map(i => `${i.ingredientName} (${i.quantity}${i.unit})`).join(', ')}</td>
-                                    <td style={{ fontWeight: 700 }}>₹{po.total_cost.toLocaleString('en-IN')}</td>
-                                    <td><span className={`badge ${STATUS_COLORS[po.status] || ''}`}>{po.status}</span></td>
-                                    <td>{po.eta || '—'}</td>
-                                    <td>
-                                        {po.status !== 'delivered' && po.status !== 'cancelled' && (
-                                            <button className="btn btn-sm btn-outline" onClick={() => updatePOStatus(po.id, po.status === 'draft' ? 'sent' : po.status === 'sent' ? 'confirmed' : po.status === 'confirmed' ? 'in-transit' : 'delivered')}>
-                                                {po.status === 'in-transit' ? '✓ Deliver' : 'Advance →'}
-                                            </button>
-                                        )}
-                                    </td>
+                                    {editPoId === po.id ? (
+                                        <>
+                                            <td>
+                                                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                                    <span style={{ fontSize: 12 }}>{firstItem.ingredientName}</span>
+                                                    <input className="input" type="number" style={{ width: 60, padding: '2px 4px', fontSize: 12 }} value={editData.qty} onChange={e => setEditData({ ...editData, qty: Number(e.target.value) })} />
+                                                    <span style={{ fontSize: 12 }}>{firstItem.unit}</span>
+                                                </div>
+                                            </td>
+                                            <td><input className="input" type="number" style={{ width: 80, padding: '2px 4px', fontSize: 12 }} value={editData.cost} onChange={e => setEditData({ ...editData, cost: Number(e.target.value) })} /></td>
+                                            <td><span className={`badge ${STATUS_COLORS[po.status] || ''}`}>{po.status}</span></td>
+                                            <td>{po.eta || '—'}</td>
+                                            <td style={{ display: 'flex', gap: 4 }}>
+                                                <button className="btn btn-sm btn-primary" onClick={async () => {
+                                                    await editPO(po.id, { items: [{ ...firstItem, quantity: editData.qty }], total_cost: editData.cost });
+                                                    setEditPoId(null);
+                                                }}>Save</button>
+                                                <button className="btn btn-sm btn-outline" onClick={() => setEditPoId(null)}>Cancel</button>
+                                            </td>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <td>{items.map(i => `${i.ingredientName} (${i.quantity}${i.unit})`).join(', ')}</td>
+                                            <td style={{ fontWeight: 700 }}>₹{po.total_cost.toLocaleString('en-IN')}</td>
+                                            <td><span className={`badge ${STATUS_COLORS[po.status] || ''}`}>{po.status}</span></td>
+                                            <td>{po.eta || '—'}</td>
+                                            <td>
+                                                <div style={{ display: 'flex', gap: 4 }}>
+                                                    {po.status === 'draft' && (
+                                                        <button className="btn btn-sm btn-outline" onClick={() => { setEditPoId(po.id); setEditData({ qty: firstItem.quantity, cost: po.total_cost }); }}>Edit</button>
+                                                    )}
+                                                    {po.status !== 'delivered' && po.status !== 'cancelled' && (
+                                                        <button className="btn btn-sm btn-outline" onClick={() => updatePOStatus(po.id, po.status === 'draft' ? 'sent' : po.status === 'sent' ? 'confirmed' : po.status === 'confirmed' ? 'in-transit' : 'delivered')}>
+                                                            {po.status === 'in-transit' ? '✓ Deliver' : 'Advance →'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </>
+                                    )}
                                 </tr>
                             );
                         })}
