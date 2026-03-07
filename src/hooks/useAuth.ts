@@ -39,21 +39,53 @@ export function useAuth() {
             }
         };
 
-        supabase.auth.getSession().then(async ({ data: { session } }) => {
+        const initAuth = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
             let profile = null;
+
             if (session?.user) {
-                profile = await loadProfile(session.user.id);
-                interval = setInterval(checkDeviceBinding, 15000); // Poll every 15 seconds
+                // Instant Local Cache Hydration (Zero Latency Unblock)
+                const cached = localStorage.getItem('fjc-profile');
+                if (cached) {
+                    try {
+                        profile = JSON.parse(cached);
+                        setAuth({ session, user: session.user, employeeProfile: profile, loading: false });
+                    } catch (e) { }
+                }
+
+                // Background Network Synchronization
+                const freshProfile = await loadProfile(session.user.id);
+                if (freshProfile) {
+                    localStorage.setItem('fjc-profile', JSON.stringify(freshProfile));
+                    profile = freshProfile;
+                }
+                interval = setInterval(checkDeviceBinding, 15000);
+            } else {
+                localStorage.removeItem('fjc-profile');
             }
             setAuth({ session, user: session?.user || null, employeeProfile: profile, loading: false });
-        });
+        };
+
+        initAuth();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             let profile = null;
             clearInterval(interval);
             if (session?.user) {
-                profile = await loadProfile(session.user.id);
+                const cached = localStorage.getItem('fjc-profile');
+                if (cached) {
+                    try { profile = JSON.parse(cached); } catch (e) { }
+                }
+                setAuth({ session, user: session.user, employeeProfile: profile, loading: false });
+
+                const freshProfile = await loadProfile(session.user.id);
+                if (freshProfile) {
+                    localStorage.setItem('fjc-profile', JSON.stringify(freshProfile));
+                    profile = freshProfile;
+                }
                 interval = setInterval(checkDeviceBinding, 15000);
+            } else {
+                localStorage.removeItem('fjc-profile');
             }
             setAuth({ session, user: session?.user || null, employeeProfile: profile, loading: false });
         });
