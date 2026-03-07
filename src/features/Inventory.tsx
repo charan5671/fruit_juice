@@ -3,11 +3,15 @@ import { useStore } from '@/lib/store';
 import { useState } from 'react';
 
 export default function Inventory() {
-    const { ingredients, addStock } = useStore();
+    const { ingredients, recipes, addStock } = useStore();
     const [selId, setSelId] = useState<number | null>(null);
     const [amount, setAmount] = useState(10);
 
     const handleAdd = async () => { if (selId && amount > 0) { await addStock(selId, amount); } };
+
+    // Dynamic metrics
+    const lowStockCount = ingredients.filter(i => i.stock <= i.threshold).length;
+    const mappedRecipesCount = recipes.filter(r => r.ingredients.length > 0).length;
 
     return (
         <div className="animate-in">
@@ -49,15 +53,24 @@ export default function Inventory() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 20 }}>
                 <div className="card glass">
-                    <h4 style={{ marginBottom: 12 }}>Wastage Monitor</h4>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                        <span>Today&apos;s waste: <strong>0 items</strong></span>
-                        <span className="badge badge-success">Clean</span>
-                    </div>
+                    <h4 style={{ marginBottom: 12 }}>System Alerts</h4>
+                    {lowStockCount > 0 ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, background: 'rgba(211,47,47,0.1)', padding: '12px', borderRadius: 8 }}>
+                            <span style={{ color: 'var(--danger)', fontWeight: 600 }}>Action Required</span>
+                            <span className="badge badge-danger">{lowStockCount} Items Low</span>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, background: 'rgba(56,142,60,0.1)', padding: '12px', borderRadius: 8 }}>
+                            <span style={{ color: 'var(--success)', fontWeight: 600 }}>All Clear</span>
+                            <span className="badge badge-success">Stock Optimal</span>
+                        </div>
+                    )}
                 </div>
                 <div className="card glass">
-                    <h4 style={{ marginBottom: 12 }}>Recipe Mapping</h4>
-                    <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>All {ingredients.length > 0 ? '8' : '0'} recipes mapped with auto-deduction on sale.</p>
+                    <h4 style={{ marginBottom: 12 }}>Recipe Mapping Engine</h4>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                        <strong>{mappedRecipesCount} / {recipes.length}</strong> active recipes are fully mapped and will automate inventory deduction upon POS checkout.
+                    </p>
                 </div>
             </div>
         </div>

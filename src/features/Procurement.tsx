@@ -1,16 +1,25 @@
 'use client';
 import { useStore } from '@/lib/store';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+// Auto-select first item when supplier changes
 
 const STATUS_COLORS: Record<string, string> = { draft: 'badge-info', sent: 'badge-info', confirmed: 'badge-warning', 'in-transit': 'badge-warning', delivered: 'badge-success', cancelled: 'badge-danger' };
 
 export default function Procurement() {
     const { purchaseOrders, suppliers, updatePOStatus, createPO } = useStore();
     const [showForm, setShowForm] = useState(false);
-    const [suppId, setSuppId] = useState(1);
-    const [itemName, setItemName] = useState('');
+    const [suppId, setSuppId] = useState(suppliers[0]?.id || 1);
+
+    // Dynamically get items for selected supplier
+    const selectedSupplier = suppliers.find(s => s.id === suppId);
+    const availableItems = (selectedSupplier?.items_supplied as string[]) || [];
+
+    const [itemName, setItemName] = useState(availableItems[0] || '');
     const [qty, setQty] = useState(10);
     const [cost, setCost] = useState(0);
+
+    // Auto-select first item when supplier changes
+    useEffect(() => { setItemName(availableItems[0] || '') }, [suppId, availableItems[0]]);
 
     const handleCreate = async () => {
         if (!itemName || qty <= 0) return;
@@ -38,7 +47,10 @@ export default function Procurement() {
                     </div>
                     <div>
                         <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Item</label>
-                        <input className="input" value={itemName} onChange={e => setItemName(e.target.value)} placeholder="e.g. Oranges" />
+                        <select className="input" value={itemName} onChange={e => setItemName(e.target.value)}>
+                            {availableItems.map(item => <option key={item} value={item}>{item}</option>)}
+                            {availableItems.length === 0 && <option value="">No items available</option>}
+                        </select>
                     </div>
                     <div>
                         <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Qty</label>

@@ -4,14 +4,33 @@ import { useStore } from '@/lib/store';
 import { useState } from 'react';
 
 export default function Profile() {
-    const { employeeProfile, biometricRegister, biometricAvailable } = useAuth();
+    const { employeeProfile, biometricRegister, biometricAvailable, updatePassword } = useAuth();
     const { currentName, currentRole } = useStore();
     const [bioStatus, setBioStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [passStep, setPassStep] = useState<'idle' | 'changing' | 'success' | 'error'>('idle');
+    const [newPass, setNewPass] = useState('');
+    const [errorMsg, setErrorMsg] = useState('');
 
     const handleRegisterBio = async () => {
         const success = await biometricRegister();
         setBioStatus(success ? 'success' : 'error');
         setTimeout(() => setBioStatus('idle'), 3000);
+    };
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setErrorMsg('');
+        if (newPass.length < 6) { setErrorMsg('Password must be at least 6 characters'); return; }
+
+        const error = await updatePassword(newPass);
+        if (error) {
+            setPassStep('error');
+            setErrorMsg(error.message);
+        } else {
+            setPassStep('success');
+            setNewPass('');
+            setTimeout(() => setPassStep('idle'), 3000);
+        }
     };
 
     return (
@@ -69,8 +88,38 @@ export default function Profile() {
                     )}
 
                     <div style={{ marginTop: 24, borderTop: '1px solid var(--glass-border)', paddingTop: 16 }}>
-                        <h4 style={{ fontSize: 14, marginBottom: 8 }}>Password</h4>
-                        <button className="btn btn-outline" style={{ width: '100%' }}>Change Password</button>
+                        <h4 style={{ fontSize: 14, marginBottom: 8 }}>Account Password</h4>
+
+                        {passStep === 'idle' && (
+                            <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => setPassStep('changing')}>
+                                Change Password
+                            </button>
+                        )}
+
+                        {passStep === 'changing' && (
+                            <form onSubmit={handleChangePassword}>
+                                <input
+                                    className="input"
+                                    type="password"
+                                    placeholder="Enter new password (min 6 chars)"
+                                    value={newPass}
+                                    onChange={e => setNewPass(e.target.value)}
+                                    autoFocus
+                                    style={{ marginBottom: 8 }}
+                                />
+                                {errorMsg && <div style={{ color: 'var(--danger)', fontSize: 12, marginBottom: 8 }}>{errorMsg}</div>}
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Setup</button>
+                                    <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setPassStep('idle'); setErrorMsg(''); }}>Cancel</button>
+                                </div>
+                            </form>
+                        )}
+
+                        {passStep === 'success' && (
+                            <div className="badge badge-success" style={{ width: '100%', padding: '12px', justifyContent: 'center' }}>
+                                ✓ Password updated successfully
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
