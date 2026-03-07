@@ -25,7 +25,8 @@ interface AppState {
     attendance: AttendanceRecord[]; payroll: PayrollRecord[]; notifications: Notification[];
 
     setActiveTab: (t: ActiveTab) => void; toggleTheme: () => void; setMobileMenuOpen: (v: boolean) => void;
-    initialize: (authUid: string) => Promise<void>; refreshData: () => Promise<void>;
+    initialize: (authUid: string) => Promise<void>;
+    refreshData: (tabs?: ActiveTab[]) => Promise<void>; // Added optional tabs parameter
     completeSale: (items: { recipeId: number; name: string; price: number; quantity: number; ingredients: { ingredientId: number; amount: number }[] }[], paymentMethod: 'cash' | 'card' | 'upi') => Promise<Order>;
     addStock: (ingredientId: number, amount: number) => Promise<void>;
     createPO: (po: { supplier_id: number; items: { ingredientName: string; quantity: number; unit: string }[]; total_cost: number; notes: string }) => Promise<void>;
@@ -42,7 +43,14 @@ export const useStore = create<AppState>((set, get) => ({
     outlets: [], ingredients: [], recipes: [], orders: [], purchaseOrders: [],
     suppliers: [], employees: [], attendance: [], payroll: [], notifications: [],
 
-    setActiveTab: (t) => set({ activeTab: t, mobileMenuOpen: false }),
+    setActiveTab: (t) => {
+        set({ activeTab: t, mobileMenuOpen: false });
+        // Lazy load data for specific tabs
+        const { refreshData } = get();
+        if (['POS', 'Inventory', 'Procurement', 'Workforce', 'Payroll', 'Analytics'].includes(t)) {
+            refreshData([t]);
+        }
+    },
     toggleTheme: () => { const n = get().theme === 'light' ? 'dark' : 'light'; document.documentElement.setAttribute('data-theme', n); localStorage.setItem('fjc-theme', n); set({ theme: n }); },
     setMobileMenuOpen: (v) => set({ mobileMenuOpen: v }),
 
@@ -62,7 +70,9 @@ export const useStore = create<AppState>((set, get) => ({
         const defaultTab: ActiveTab = role === 'seller' ? 'POS' : role === 'staff' ? 'Workforce' : 'Dashboard';
 
         set({ initialized: true, theme: saved || 'light', currentEmployeeId: emp?.id || null, currentRole: role, currentName: emp?.name || '', activeTab: defaultTab });
-        await get().refreshData();
+
+        // Initial Selective Refresh (Fast Path)
+        await get().refreshData(['Settings', 'Inventory', 'Dashboard', 'Notifications']);
 
         // Realtime subscriptions
         supabase.channel('db-sync')
@@ -76,30 +86,49 @@ export const useStore = create<AppState>((set, get) => ({
             .subscribe();
     },
 
-    refreshData: async () => {
-        const [
-            { data: outlets }, { data: ingredients }, { data: recipes },
-            { data: orders }, { data: purchaseOrders }, { data: suppliers },
-            { data: employees }, { data: attendance }, { data: payroll },
-            { data: notifications }
-        ] = await Promise.all([
-            supabase.from('outlets').select('*'),
-            supabase.from('ingredients').select('*'),
-            supabase.from('recipes').select('*'),
-            supabase.from('orders').select('*').order('created_at', { ascending: false }),
-            supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }),
-            supabase.from('suppliers').select('*'),
-            supabase.from('employees').select('*'),
-            supabase.from('attendance').select('*').order('id', { ascending: false }),
-            supabase.from('payroll').select('*'),
-            supabase.from('notifications').select('*').order('created_at', { ascending: false }),
-        ]);
-        set({
-            outlets: outlets || [], ingredients: ingredients || [], recipes: recipes || [],
-            orders: orders || [], purchaseOrders: purchaseOrders || [], suppliers: suppliers || [],
-            employees: employees || [], attendance: attendance || [], payroll: payroll || [],
-            notifications: notifications || [],
+    refreshData: async (tabs) => {
+        const fetchers: Record<string, any> = {};
+
+        // Core/Common data
+        if (!tabs || tabs.includes('Dashboard') || tabs.includes('Settings')) {
+            fetchers.outlets = supabase.from('outlets').select('*');
+            fetchers.employees = supabase.from('employees').select('*');
+            fetchers.notifications = supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(20);
+        }
+
+        // Inventory & Recipes (Essential for POS)
+        if (!tabs || tabs.includes('Inventory') || tabs.includes('POS')) {
+            fetchers.ingredients = supabase.from('ingredients').select('*');
+            fetchers.recipes = supabase.from('recipes').select('*');
+        }
+
+        // Historical Data (Lazy)
+        if (!tabs || tabs.includes('POS') || tabs.includes('Analytics')) {
+            fetchers.orders = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(50);
+        }
+
+        if (!tabs || tabs.includes('Procurement')) {
+            fetchers.purchaseOrders = supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(30);
+            fetchers.suppliers = supabase.from('suppliers').select('*');
+        }
+
+        if (!tabs || tabs.includes('Workforce') || tabs.includes('Payroll')) {
+            fetchers.attendance = supabase.from('attendance').select('*').order('id', { ascending: false }).limit(50);
+        }
+
+        if (!tabs || tabs.includes('Payroll')) {
+            fetchers.payroll = supabase.from('payroll').select('*');
+        }
+
+        const keys = Object.keys(fetchers);
+        const results = await Promise.all(Object.values(fetchers));
+
+        const newState: Partial<AppState> = {};
+        keys.forEach((key, i) => {
+            newState[key as keyof AppState] = (results[i].data || []) as any;
         });
+
+        set(newState as any);
     },
 
     completeSale: async (items, paymentMethod) => {
@@ -137,16 +166,7 @@ export const useStore = create<AppState>((set, get) => ({
     updatePOStatus: async (id, status) => {
         const { currentEmployeeId, currentName } = get();
         await supabase.from('purchase_orders').update({ status }).eq('id', id);
-        if (status === 'delivered') {
-            const { data: po } = await supabase.from('purchase_orders').select('*').eq('id', id).single();
-            if (po) {
-                for (const item of (po.items as { ingredientName: string; quantity: number }[])) {
-                    const { data: ing } = await supabase.from('ingredients').select('*').eq('name', item.ingredientName).single();
-                    if (ing) await supabase.from('ingredients').update({ stock: +(ing.stock + item.quantity).toFixed(2), last_updated: new Date().toISOString() }).eq('id', ing.id);
-                }
-                await supabase.from('notifications').insert({ type: 'success', title: 'PO Delivered', message: `PO #${id} delivered. Stock updated.`, module: 'procurement' });
-            }
-        }
+        // Data transformation (stock update, audit log, notifications) is now fully automated via Postgres Triggers on 'purchase_orders' update
         await supabase.from('audit_log').insert({ action: 'PO_STATUS_UPDATED', user_id: currentEmployeeId, user_name: currentName, module: 'procurement', details: `PO #${id} → ${status}` });
     },
 
@@ -174,21 +194,12 @@ export const useStore = create<AppState>((set, get) => ({
     markNotificationRead: async (id) => { await supabase.from('notifications').update({ read: true }).eq('id', id); },
 
     runPayroll: async (month) => {
-        const { currentEmployeeId, currentName } = get();
-        const { data: emps } = await supabase.from('employees').select('*').eq('status', 'active');
-        if (!emps) return;
-        for (const emp of emps) {
-            const { data: records } = await supabase.from('attendance').select('*').eq('employee_id', emp.id);
-            const mr = (records || []).filter((r: AttendanceRecord) => r.date.startsWith(month));
-            const totalHours = mr.reduce((s: number, r: AttendanceRecord) => s + r.hours_worked, 0);
-            const daysPresent = mr.filter((r: AttendanceRecord) => r.status === 'present' || r.status === 'late').length;
-            const dailyRate = emp.salary / 30;
-            const basePay = Math.round(dailyRate * daysPresent);
-            const overtime = Math.max(0, totalHours - daysPresent * 8) * (dailyRate / 8) * 1.5;
-            const deductions = mr.filter((r: AttendanceRecord) => r.status === 'late').length * 200;
-            await supabase.from('payroll').upsert({ employee_id: emp.id, month, total_days: 30, days_present: daysPresent, hours_worked: totalHours, base_pay: basePay, overtime: Math.round(overtime), deductions, net_pay: Math.round(basePay + Math.round(overtime) - deductions), status: 'draft' }, { onConflict: 'employee_id,month' });
-        }
-        await supabase.from('notifications').insert({ type: 'success', title: 'Payroll Generated', message: `Payroll for ${month} calculated`, module: 'payroll' });
-        await supabase.from('audit_log').insert({ action: 'PAYROLL_RUN', user_id: currentEmployeeId, user_name: currentName, module: 'payroll', details: `Payroll for ${month}` });
+        const { currentEmployeeId } = get();
+        // Utilize the fully automated database RPC for professional atomic calculation
+        const { error } = await supabase.rpc('generate_monthly_payroll', {
+            p_month: month,
+            p_admin_id: currentEmployeeId || 0
+        });
+        if (error) throw error;
     },
 }));
