@@ -25,7 +25,7 @@ interface AppState {
     attendance: AttendanceRecord[]; payroll: PayrollRecord[]; notifications: Notification[];
 
     setActiveTab: (t: ActiveTab) => void; toggleTheme: () => void; setMobileMenuOpen: (v: boolean) => void;
-    initialize: (authUid: string) => Promise<void>;
+    initialize: (user: { id: string; email?: string | undefined }, profile?: { id: number; name: string; role: string; outlet_id: number; status: string } | null) => Promise<void>;
     refreshData: (tabs?: ActiveTab[]) => Promise<void>; // Added optional tabs parameter
     completeSale: (items: { recipeId: number; name: string; price: number; quantity: number; ingredients: { ingredientId: number; amount: number }[] }[], paymentMethod: 'cash' | 'card' | 'upi') => Promise<Order>;
     addRecipe: (recipe: Omit<Recipe, 'id'>) => Promise<void>;
@@ -62,25 +62,21 @@ export const useStore = create<AppState>((set, get) => ({
     toggleTheme: () => { const n = get().theme === 'light' ? 'dark' : 'light'; document.documentElement.setAttribute('data-theme', n); localStorage.setItem('fjc-theme', n); set({ theme: n }); },
     setMobileMenuOpen: (v) => set({ mobileMenuOpen: v }),
 
-    initialize: async (authUid: string) => {
+    initialize: async (user, profile) => {
         if (get().initialized) return;
         const saved = typeof window !== 'undefined' ? (localStorage.getItem('fjc-theme') as 'light' | 'dark') : null;
         if (saved) document.documentElement.setAttribute('data-theme', saved);
 
-        // Get current employee from auth UID
-        const { data: emp } = await supabase.from('employees').select('*').eq('auth_uid', authUid).single();
-
         // Systematic Override: Ensure Master Admin is ALWAYS admin
-        let role = (emp?.role || 'staff') as Role;
-        const { data: { user } } = await supabase.auth.getUser();
+        let role = (profile?.role || 'staff') as Role;
         if (user?.email === 'charanmaddirala111@gmail.com') role = 'admin';
 
         const defaultTab: ActiveTab = role === 'seller' ? 'POS' : role === 'staff' ? 'Workforce' : 'Dashboard';
 
-        set({ initialized: true, theme: saved || 'light', currentEmployeeId: emp?.id || null, currentRole: role, currentName: emp?.name || '', activeTab: defaultTab });
+        set({ initialized: true, theme: saved || 'light', currentEmployeeId: profile?.id || null, currentRole: role, currentName: profile?.name || '', activeTab: defaultTab });
 
-        // Initial Selective Refresh (Fast Path)
-        await get().refreshData(['Settings', 'Inventory', 'Dashboard', 'Notifications']);
+        // Initial Selective Refresh (Fast Path) - FIRE AND FORGET
+        get().refreshData(['Settings', 'Inventory', 'Dashboard', 'Notifications']).catch(console.error);
 
         // Realtime subscriptions
         supabase.channel('db-sync')

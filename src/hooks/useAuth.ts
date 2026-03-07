@@ -21,23 +21,58 @@ export function useAuth() {
     }, []);
 
     useEffect(() => {
+        let interval: NodeJS.Timeout;
+
+        const checkDeviceBinding = async () => {
+            const { data: { user } } = await supabase.auth.getUser(); // Authoritative server hit to bypass stale local cache
+            if (!user) return;
+
+            const serverDeviceId = user.user_metadata?.current_device_id;
+            const localDeviceId = localStorage.getItem('fjc-device-id');
+
+            // If the server has a device ID mapped, and we locally don't match, force ejection.
+            if (serverDeviceId && localDeviceId && serverDeviceId !== localDeviceId) {
+                localStorage.setItem('fjc-logout-reason', 'Concurrent session detected. Your account has been securely signed out because it was accessed from another device.');
+                await supabase.auth.signOut();
+                setAuth({ session: null, user: null, employeeProfile: null, loading: false });
+                if (typeof window !== 'undefined') window.location.reload();
+            }
+        };
+
         supabase.auth.getSession().then(async ({ data: { session } }) => {
             let profile = null;
-            if (session?.user) profile = await loadProfile(session.user.id);
+            if (session?.user) {
+                profile = await loadProfile(session.user.id);
+                interval = setInterval(checkDeviceBinding, 15000); // Poll every 15 seconds
+            }
             setAuth({ session, user: session?.user || null, employeeProfile: profile, loading: false });
         });
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             let profile = null;
-            if (session?.user) profile = await loadProfile(session.user.id);
+            clearInterval(interval);
+            if (session?.user) {
+                profile = await loadProfile(session.user.id);
+                interval = setInterval(checkDeviceBinding, 15000);
+            }
             setAuth({ session, user: session?.user || null, employeeProfile: profile, loading: false });
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            subscription.unsubscribe();
+            clearInterval(interval);
+        };
     }, [loadProfile]);
 
     const signIn = async (email: string, password: string) => {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (!error && data.user) {
+            // Generate deterministic device session binding
+            const deviceId = crypto.randomUUID();
+            localStorage.setItem('fjc-device-id', deviceId);
+            // Non-blocking upload to sync session dominance
+            supabase.auth.updateUser({ data: { current_device_id: deviceId } }).catch(console.error);
+        }
         return error;
     };
 

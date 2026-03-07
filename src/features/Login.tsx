@@ -18,11 +18,18 @@ export default function Login() {
 
     const isAdmin = email === 'charanmaddirala111@gmail.com';
 
-    // Detect recovery link hash
+    // Detect recovery link hash or forced logout reason
     useEffect(() => {
-        if (typeof window !== 'undefined' && window.location.hash === '#reset') {
-            setMode('reset');
-            setSuccess('✅ Recovery link verified. Please set your new password.');
+        if (typeof window !== 'undefined') {
+            if (window.location.hash === '#reset') {
+                setMode('reset');
+                setSuccess('✅ Recovery link verified. Please set your new password.');
+            }
+            const logoutReason = localStorage.getItem('fjc-logout-reason');
+            if (logoutReason) {
+                setError(`🔒 ${logoutReason}`);
+                localStorage.removeItem('fjc-logout-reason');
+            }
         }
     }, []);
 

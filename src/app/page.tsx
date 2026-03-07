@@ -33,8 +33,10 @@ export default function Home() {
   const { activeTab, initialized, initialize, mobileMenuOpen, setMobileMenuOpen, currentRole, setActiveTab } = useStore();
 
   useEffect(() => {
-    if (user && !initialized) initialize(user.id);
-  }, [user, initialized, initialize]);
+    if (user && !authLoading && !initialized) {
+      initialize({ id: user.id, email: user.email }, employeeProfile);
+    }
+  }, [user, employeeProfile, authLoading, initialized, initialize]);
 
   // Role Gate check
   useEffect(() => {
