@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import styles from './TopBar.module.css';
 
 export default function TopBar() {
-    const { currentRole, currentName, theme, toggleTheme, mobileMenuOpen, setMobileMenuOpen, notifications } = useStore();
+    const { currentRole, currentName, theme, toggleTheme, mobileMenuOpen, setMobileMenuOpen, notifications, setActiveTab } = useStore();
     const { signOut, biometricAvailable, biometricRegister } = useAuth();
     const unread = notifications.filter(n => !n.read).length;
 
@@ -14,11 +14,10 @@ export default function TopBar() {
                 <button className={styles.burger} onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="Menu">
                     {mobileMenuOpen ? '✕' : '☰'}
                 </button>
-                <input type="text" placeholder="Search modules, orders..." className={`input ${styles.search}`} />
             </div>
             <div className={styles.right}>
                 <button className={styles.iconBtn} onClick={toggleTheme} aria-label="Theme">{theme === 'light' ? '🌙' : '☀️'}</button>
-                <button className={styles.iconBtn} style={{ position: 'relative' }} onClick={() => useStore.getState().setActiveTab('Notifications')} aria-label="Notifications">
+                <button className={styles.iconBtn} style={{ position: 'relative' }} onClick={() => setActiveTab('Notifications')} aria-label="Notifications">
                     🔔 {unread > 0 && <span className={styles.dot}>{unread}</span>}
                 </button>
                 {biometricAvailable && (

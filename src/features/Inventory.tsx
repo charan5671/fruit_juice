@@ -3,7 +3,8 @@ import { useStore } from '@/lib/store';
 import { useState } from 'react';
 
 export default function Inventory() {
-    const { ingredients, recipes, addStock, addIngredient, updateIngredient, deleteIngredient } = useStore();
+    const { ingredients, recipes, addStock, addIngredient, updateIngredient, deleteIngredient, employees, currentEmployeeId, currentRole } = useStore();
+    const currentEmp = employees.find(e => e.id === currentEmployeeId);
     const [selId, setSelId] = useState<number | null>(null);
     const [amount, setAmount] = useState(10);
     const [view, setView] = useState<'stock' | 'manage'>('stock');
@@ -16,7 +17,7 @@ export default function Inventory() {
     const handleAdd = async () => { if (selId && amount > 0) { await addStock(selId, amount); } };
     const handleAddNew = async () => {
         if (!newIng.name) return;
-        await addIngredient({ name: newIng.name, stock: 0, unit: newIng.unit, threshold: newIng.threshold, outlet_id: 1 });
+        await addIngredient({ name: newIng.name, stock: 0, unit: newIng.unit, threshold: newIng.threshold, outlet_id: currentEmp?.outlet_id || 1 });
         setNewIng({ name: '', unit: 'kg', threshold: 5 });
         alert('New ingredient added!');
     };
@@ -34,7 +35,7 @@ export default function Inventory() {
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                     <button className={`btn btn-sm ${view === 'stock' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('stock')}>📦 Update Stock</button>
-                    {['admin', 'manager', 'procurement'].includes(useStore.getState().currentRole) && (
+                    {['admin', 'manager', 'procurement'].includes(currentRole) && (
                         <button className={`btn btn-sm ${view === 'manage' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('manage')}>⚙️ Manage Items</button>
                     )}
                 </div>

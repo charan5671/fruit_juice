@@ -2,13 +2,20 @@
 import { useStore } from '@/lib/store';
 
 export default function Notifications() {
-    const { notifications, markNotificationRead } = useStore();
+    const { notifications, markNotificationRead, markAllNotificationsRead } = useStore();
     const ICONS: Record<string, string> = { alert: '🔴', warning: '🟡', info: '🔵', success: '🟢' };
 
     return (
         <div className="animate-in">
-            <h1 className="section-title">Notification Center</h1>
-            <p className="section-subtitle">Real-time system alerts synced from Supabase</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                    <h1 className="section-title">Notification Center</h1>
+                    <p className="section-subtitle">Real-time system alerts synced from Supabase</p>
+                </div>
+                {notifications.some(n => !n.read) && (
+                    <button className="btn btn-sm btn-outline" onClick={() => markAllNotificationsRead()}>Mark All Read</button>
+                )}
+            </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {notifications.length === 0 && <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 40 }}>No notifications yet.</p>}

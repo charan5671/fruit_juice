@@ -8,9 +8,12 @@ export default function Workforce() {
     const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
     const [timer, setTimer] = useState('00:00:00');
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
-    const today = new Date().toISOString().split('T')[0];
+    const getToday = () => new Date().toISOString().split('T')[0];
 
-    const currentEmployee = employees.find(e => e.id === currentEmployeeId) || employees[0];
+    // Recompute today on every render to avoid stale date after midnight
+    const today = getToday();
+
+    const currentEmployee = employees.find(e => e.id === currentEmployeeId);
     const todayRecord = attendance.find(a => a.employee_id === currentEmployee?.id && a.date === today);
     const isCheckedIn = !!todayRecord?.check_in && !todayRecord?.check_out;
 
@@ -19,7 +22,7 @@ export default function Workforce() {
         const tick = () => {
             const [ch, cm] = todayRecord.check_in!.split(':').map(Number);
             const now = new Date();
-            const diff = (now.getHours() * 60 + now.getMinutes()) - (ch * 60 + cm);
+            const diff = Math.max(0, (now.getHours() * 60 + now.getMinutes()) - (ch * 60 + cm));
             const h = Math.floor(diff / 60); const m = diff % 60; const s = now.getSeconds();
             setTimer(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
         };
@@ -38,8 +41,8 @@ export default function Workforce() {
                     if (currentEmployee?.id) await checkIn(currentEmployee.id, pos.coords.latitude, pos.coords.longitude);
                 },
                 async () => {
-                    const lat = 12.9352 + Math.random() * 0.001;
-                    const lng = 77.6245 + Math.random() * 0.001;
+                    const lat = 12.93; // Default region
+                    const lng = 77.61;
                     setCoords({ lat, lng }); setGpsStatus('success');
                     if (currentEmployee?.id) await checkIn(currentEmployee.id, lat, lng);
                 },
@@ -82,7 +85,7 @@ export default function Workforce() {
                 <div className="card glass">
                     <h4 style={{ marginBottom: 16 }}>Employee Roster</h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {employees.map(emp => {
+                        {((['admin', 'manager'].includes(currentRole)) ? employees : employees.filter(e => e.id === currentEmployeeId)).map(emp => {
                             const att = attendance.find(a => a.employee_id === emp.id && a.date === today);
                             return (
                                 <div key={emp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
@@ -104,7 +107,7 @@ export default function Workforce() {
                 <table className="data-table">
                     <thead><tr><th>Employee</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Hours</th><th>GPS</th><th>Status</th></tr></thead>
                     <tbody>
-                        {attendance.slice(0, 20).map(att => {
+                        {((['admin', 'manager'].includes(currentRole)) ? attendance : attendance.filter(a => a.employee_id === currentEmployeeId)).slice(0, 20).map(att => {
                             const emp = employees.find(e => e.id === att.employee_id);
                             return (
                                 <tr key={att.id}>

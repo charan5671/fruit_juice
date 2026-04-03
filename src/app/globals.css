@@ -20,6 +20,9 @@
   --topbar-h: 64px;
   --radius: 14px;
   --radius-sm: 8px;
+  --primary-rgb: 27, 122, 43;
+  --bg-main: #f0f4f8;
+  --bg-inset: #e8ecf1;
 }
 
 [data-theme='dark'] {
@@ -34,6 +37,9 @@
   --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   --text: #e2e8f0;
   --text-secondary: #94a3b8;
+  --primary-rgb: 102, 187, 106;
+  --bg-main: #0b1120;
+  --bg-inset: #131b2e;
 }
 
 *,
@@ -335,9 +341,106 @@ select.input {
   border-radius: 10px;
 }
 
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.2s ease both;
+}
+
+.modal-content {
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 32px;
+  animation: fadeIn 0.3s ease both;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.icon-btn:hover {
+  background: var(--glass-border);
+}
+
+.form-group {
+  margin-bottom: 0;
+}
+
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+
+.badge-primary {
+  background: rgba(27, 122, 43, 0.15);
+  color: var(--primary);
+}
+
+.badge-error {
+  background: rgba(211, 47, 47, 0.1);
+  color: var(--danger);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background 0.2s;
+}
+
+.btn-ghost:hover {
+  color: var(--primary);
+  background: var(--primary-glow);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   :root {
     --sidebar-w: 0px;
   }
+}
+
+/* Accessibility: Focus-visible for keyboard navigation (WCAG 2.1) */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+button:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
+.input:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow);
 }

@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useStore } from '@/lib/store';
 import type { Session, User } from '@supabase/supabase-js';
 
-interface EmployeeProfile { id: number; name: string; role: string; email: string; outlet_id: number; status: string; }
+interface EmployeeProfile { id: number; name: string; role: string; email: string; phone?: string; outlet_id: number; status: string; }
 
 interface AuthState {
     session: Session | null;
@@ -13,10 +14,27 @@ interface AuthState {
 }
 
 export function useAuth() {
-    const [auth, setAuth] = useState<AuthState>({ session: null, user: null, employeeProfile: null, loading: true });
+    const [auth, setAuth] = useState<AuthState>(() => {
+        if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem('fjc-profile');
+            if (cached) {
+                try {
+                    const profile = JSON.parse(cached);
+                    // Return profile data but keep loading=true so we validate session before rendering
+                    return { 
+                        session: null, 
+                        user: null, 
+                        employeeProfile: profile, 
+                        loading: true 
+                    };
+                } catch(e) {}
+            }
+        }
+        return { session: null, user: null, employeeProfile: null, loading: true };
+    });
 
     const loadProfile = useCallback(async (userId: string) => {
-        const { data } = await supabase.from('employees').select('id, name, role, email, outlet_id, status').eq('auth_uid', userId).single();
+        const { data } = await supabase.from('employees').select('id, name, role, email, phone, outlet_id, status').eq('auth_uid', userId).single();
         return data as EmployeeProfile | null;
     }, []);
 
@@ -62,6 +80,8 @@ export function useAuth() {
                 interval = setInterval(checkDeviceBinding, 15000);
             } else {
                 localStorage.removeItem('fjc-profile');
+                if (typeof window !== 'undefined') localStorage.removeItem('fjc-device-id');
+                useStore.getState().resetStore();
             }
             setAuth({ session, user: session?.user || null, employeeProfile: profile, loading: false });
         };
@@ -84,10 +104,16 @@ export function useAuth() {
                     profile = freshProfile;
                 }
                 interval = setInterval(checkDeviceBinding, 15000);
+                setAuth({ session, user: session.user, employeeProfile: profile, loading: false });
             } else {
+                // CRITICAL: Properly clean up on sign-out
                 localStorage.removeItem('fjc-profile');
+                localStorage.removeItem('fjc-device-id');
+                try {
+                    useStore.getState().resetStore();
+                } catch(e) {}
+                setAuth({ session: null, user: null, employeeProfile: null, loading: false });
             }
-            setAuth({ session, user: session?.user || null, employeeProfile: profile, loading: false });
         });
 
         return () => {
@@ -148,8 +174,21 @@ export function useAuth() {
     };
 
     const signOut = async () => {
-        await supabase.auth.signOut();
+        // Clear local state FIRST to ensure immediate UI update
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('fjc-profile');
+            localStorage.removeItem('fjc-device-id');
+        }
+        // Reset the Zustand store directly (no dynamic import flakiness)
+        try {
+            useStore.getState().resetStore();
+            // Also unsubscribe from realtime channels
+            supabase.removeAllChannels();
+        } catch(e) {}
+        // Clear auth state immediately so Login renders
         setAuth({ session: null, user: null, employeeProfile: null, loading: false });
+        // Sign out from Supabase (this triggers onAuthStateChange which is also cleaned up)
+        await supabase.auth.signOut();
     };
 
     const biometricAvailable = typeof window !== 'undefined' && !!window.PublicKeyCredential;

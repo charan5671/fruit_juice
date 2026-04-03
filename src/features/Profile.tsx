@@ -5,7 +5,11 @@ import { useState } from 'react';
 
 export default function Profile() {
     const { employeeProfile, biometricRegister, biometricAvailable, updatePassword } = useAuth();
-    const { currentName, currentRole, updateEmployee, currentEmployeeId } = useStore();
+    const { currentName, currentRole, updateEmployee, currentEmployeeId, employees } = useStore();
+    
+    // Live synced profile data
+    const activeProfile = employees.find(e => e.id === currentEmployeeId) || employeeProfile;
+
     const [bioStatus, setBioStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [passStep, setPassStep] = useState<'idle' | 'changing' | 'success' | 'error'>('idle');
     const [newPass, setNewPass] = useState('');
@@ -16,14 +20,19 @@ export default function Profile() {
     const [editData, setEditData] = useState({ name: '', phone: '' });
 
     const handleEditStart = () => {
-        // @ts-ignore
-        setEditData({ name: employeeProfile?.name || '', phone: employeeProfile?.phone || '' });
+        setEditData({ name: activeProfile?.name || '', phone: activeProfile?.phone || '' });
         setIsEditing(true);
     };
 
     const handleSaveProfile = async () => {
         if (currentEmployeeId) {
-            await updateEmployee(currentEmployeeId, editData);
+            try {
+                await updateEmployee(currentEmployeeId, editData);
+                alert('Profile updated successfully!');
+            } catch (err: any) {
+                alert(`Error saving profile: ${err.message}`);
+                return;
+            }
         }
         setIsEditing(false);
     };
@@ -62,7 +71,7 @@ export default function Profile() {
                     )}
 
                     <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 32, fontWeight: 900 }}>
-                        {employeeProfile?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
+                        {activeProfile?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
                     </div>
 
                     {isEditing ? (
@@ -70,7 +79,7 @@ export default function Profile() {
                             <input className="input" value={editData.name} onChange={e => setEditData({ ...editData, name: e.target.value })} style={{ textAlign: 'center', fontSize: 20, fontWeight: 700, padding: 8, marginBottom: 8 }} placeholder="Full Name" />
                         </div>
                     ) : (
-                        <h2 style={{ fontSize: 20, marginBottom: 4 }}>{employeeProfile?.name}</h2>
+                        <h2 style={{ fontSize: 20, marginBottom: 4 }}>{activeProfile?.name}</h2>
                     )}
 
                     <div className="badge badge-info" style={{ textTransform: 'capitalize', fontSize: 13 }}>{currentRole}</div>
@@ -78,14 +87,14 @@ export default function Profile() {
                     <div style={{ marginTop: 24, textAlign: 'left', borderTop: '1px solid var(--glass-border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Email</span>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>{employeeProfile?.email}</span>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>{activeProfile?.email}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Phone</span>
                             {isEditing ? (
                                 <input className="input" style={{ width: 140, padding: '4px 8px', fontSize: 12 }} value={editData.phone} onChange={e => setEditData({ ...editData, phone: e.target.value })} placeholder="+91 XXXXX" />
                             ) : (
-                                <span style={{ fontSize: 13, fontWeight: 600 }}>{(employeeProfile as any)?.phone || '—'}</span>
+                                <span style={{ fontSize: 13, fontWeight: 600 }}>{activeProfile?.phone || '—'}</span>
                             )}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -94,7 +103,7 @@ export default function Profile() {
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Outlet ID</span>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>#{employeeProfile?.outlet_id || 1}</span>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>#{activeProfile?.outlet_id || 1}</span>
                         </div>
                     </div>
 

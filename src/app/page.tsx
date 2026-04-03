@@ -15,38 +15,45 @@ import Analytics from '@/features/Analytics';
 import Notifications from '@/features/Notifications';
 import UserManagement from '@/features/UserManagement';
 import Profile from '@/features/Profile';
+import Orders from '@/features/Orders';
+import Production from '@/features/Production';
 
 const modules: Record<string, React.ComponentType> = {
-  Dashboard, POS, Inventory, Procurement, Workforce, Payroll, Analytics, Notifications, UserManagement, Settings: Profile,
+  Dashboard, POS, Orders, Production, Inventory, Procurement, Workforce, Payroll, Analytics, Notifications, UserManagement, Settings: Profile,
 };
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  admin: ['Dashboard', 'POS', 'Inventory', 'Procurement', 'Workforce', 'Payroll', 'Analytics', 'Notifications', 'UserManagement', 'Settings'],
-  manager: ['Dashboard', 'POS', 'Inventory', 'Procurement', 'Workforce', 'Notifications', 'Settings'],
+  admin: ['Dashboard', 'POS', 'Orders', 'Production', 'Inventory', 'Procurement', 'Workforce', 'Payroll', 'Analytics', 'Notifications', 'UserManagement', 'Settings'],
+  manager: ['Dashboard', 'POS', 'Orders', 'Production', 'Inventory', 'Procurement', 'Workforce', 'Notifications', 'Settings'],
   procurement: ['Procurement', 'Inventory', 'Notifications', 'Settings'],
-  seller: ['POS', 'Inventory', 'Notifications', 'Settings'],
+  seller: ['POS', 'Orders', 'Production', 'Inventory', 'Notifications', 'Settings'],
   staff: ['Workforce', 'Payroll', 'Notifications', 'Settings'],
 };
 
 export default function Home() {
   const { session, user, employeeProfile, loading: authLoading, signOut } = useAuth();
-  const { activeTab, initialized, initialize, mobileMenuOpen, setMobileMenuOpen, currentRole, setActiveTab } = useStore();
+  const { activeTab, initialized, initialize, mobileMenuOpen, setMobileMenuOpen, currentRole, setActiveTab, _hasHydrated } = useStore();
+
+  // Hydration guard moved BELOW all hooks to comply with Rules of Hooks
 
   useEffect(() => {
-    if (user && !authLoading && !initialized) {
+    if (_hasHydrated && session && user && !authLoading && !initialized && employeeProfile) {
       initialize({ id: user.id, email: user.email }, employeeProfile);
     }
-  }, [user, employeeProfile, authLoading, initialized, initialize]);
+  }, [_hasHydrated, session, user, employeeProfile, authLoading, initialized, initialize]);
 
   // Role Gate check
   useEffect(() => {
-    if (initialized && currentRole) {
+    if (_hasHydrated && initialized && currentRole) {
       const allowed = ROLE_PERMISSIONS[currentRole] || [];
       if (!allowed.includes(activeTab)) {
         setActiveTab(allowed[0] as any);
       }
     }
-  }, [initialized, currentRole, activeTab, setActiveTab]);
+  }, [_hasHydrated, initialized, currentRole, activeTab, setActiveTab]);
+
+  // Hydration Guard — must be AFTER all hooks
+  if (!_hasHydrated) return null;
 
   // Loading
   if (authLoading) {
@@ -102,7 +109,7 @@ export default function Home() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
-      {mobileMenuOpen && <div onClick={() => setMobileMenuOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', zIndex: 95 }} />}
+      {/* Mobile overlay is rendered by Sidebar.tsx — removed duplicate here */}
       <main style={{ flex: 1, marginLeft: 'var(--sidebar-w)', paddingTop: 'calc(var(--topbar-h) + 32px)', paddingLeft: 'clamp(16px, 3vw, 32px)', paddingRight: 'clamp(16px, 3vw, 32px)', paddingBottom: 40, maxWidth: '100vw', transition: 'margin-left 0.3s' }}>
         <TopBar />
         <div style={{ maxWidth: 1200, margin: '0 auto' }}><Module /></div>

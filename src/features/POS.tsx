@@ -1,10 +1,10 @@
 'use client';
 import { useStore, type Order } from '@/lib/store';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import styles from './POS.module.css';
 
 export default function POS() {
-    const { recipes, completeSale, orders, currentName } = useStore();
+    const { recipes, completeSale, orders, currentName, outlets, employees, currentEmployeeId, addRecipe, updateRecipe, deleteRecipe, ingredients, currentRole } = useStore();
     const [cart, setCart] = useState<{ recipeId: number; name: string; price: number; quantity: number; icon: string; ingredients: { ingredientId: number; amount: number }[] }[]>([]);
     const [payment, setPayment] = useState<'cash' | 'card' | 'upi'>('cash');
     const [filter, setFilter] = useState('All');
@@ -12,9 +12,14 @@ export default function POS() {
     const [receipt, setReceipt] = useState<Order | null>(null);
     const receiptRef = useRef<HTMLDivElement>(null);
 
+    // Checkout Details
+    const [customerName, setCustomerName] = useState('');
+    const [customerPhone, setCustomerPhone] = useState('');
+    const [notes, setNotes] = useState('');
+
     // Manage Menu States
-    const { addRecipe, ingredients } = useStore();
-    const [newRecipe, setNewRecipe] = useState({ name: '', price: 100, category: 'Fresh Juices', icon: '🍹', ingId: null as number | null, ingAmount: 1 });
+    const [newRecipe, setNewRecipe] = useState({ name: '', price: 100, category: 'Fresh Juices', icon: '🍹', ingId: null as number | null, ingAmount: 1, isAvailable: true });
+    const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
 
     const addToCart = (recipe: typeof recipes[0]) => {
         setCart(prev => {
@@ -35,14 +40,13 @@ export default function POS() {
     const handleSale = async () => {
         if (cart.length === 0) return;
         try {
-            const newOrder = await completeSale(cart, payment);
+            const newOrder = await completeSale(cart, payment, customerName, customerPhone, notes, 'Pending'); // Mark as pending initially to enter the Order pipeline!
             setCart([]);
+            setCustomerName('');
+            setCustomerPhone('');
+            setNotes('');
             setReceipt(newOrder);
-
-            // Automatic printing: Give a tiny delay for the UI to transition then open print
-            setTimeout(() => {
-                printReceipt();
-            }, 800);
+            // Auto-print is handled by useEffect below
         } catch (err) {
             console.error('Sale failed:', err);
             alert('Transaction failed. Please try again.');
@@ -60,12 +64,20 @@ export default function POS() {
       .line { border-top:1px dashed #ddd; margin:12px 0; }
       .row { display:flex; justify-content:space-between; padding:3px 0; }
       .brand { font-size:24px; letter-spacing:-1px; margin-bottom:4px; }
-      .qr-placeholder { width:100px; height:100px; border:1px solid #ddd; margin:15px auto; display:flex; align-items:center; justifyContent:center; background:#f9f9f9; font-size:8px; color:#999; }
+      .qr-placeholder { width:100px; height:100px; border:1px solid #ddd; margin:15px auto; display:flex; align-items:center; justify-content:center; background:#f9f9f9; font-size:8px; color:#999; }
       h2 { font-size:20px; } h3 { font-size:14px; }
       @media print { body { width: 100%; padding: 0; } .no-print { display: none; } }
     </style></head><body>${receiptRef.current.innerHTML}<script>window.onload = () => { window.print(); setTimeout(() => window.close(), 500); }</script></body></html>`);
         win.document.close();
     };
+
+    // M5: Auto-print receipt via useEffect (replaces unreliable setTimeout)
+    useEffect(() => {
+        if (receipt && receiptRef.current) {
+            const timer = setTimeout(() => printReceipt(), 600);
+            return () => clearTimeout(timer);
+        }
+    }, [receipt]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Receipt Modal
     if (receipt) {
@@ -80,10 +92,18 @@ export default function POS() {
                 <div className="card glass" style={{ maxWidth: 420, margin: '0 auto', padding: '40px 32px', border: '1px solid var(--glass-border)' }}>
                     <div ref={receiptRef}>
                         <div className="center mb">
-                            <div className="brand bold">🍹 FreshJuice</div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#444' }}>Enterprise POS Terminal</div>
-                            <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>80 Feet Rd, Koramangala, Bangalore</div>
-                            <div style={{ fontSize: 10, color: '#888' }}>GSTIN: 29AABCF1234D1ZF</div>
+                            {(() => {
+                                const emp = employees.find(e => e.id === receipt.seller_id);
+                                const outlet = outlets.find(o => o.id === receipt.outlet_id);
+                                return (
+                                    <>
+                                        <div className="brand bold">🍹 {outlet?.name || 'FreshJuice'}</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: '#444' }}>Enterprise POS Terminal</div>
+                                        <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{outlet?.address || '80 Feet Rd, Koramangala, Bangalore'}</div>
+                                        <div style={{ fontSize: 10, color: '#888' }}>Phone: {outlet?.phone || '+91 98765 43210'}</div>
+                                    </>
+                                );
+                            })()}
                         </div>
                         <div className="line" />
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 11 }}>
@@ -143,61 +163,122 @@ export default function POS() {
                 <div style={{ display: 'flex', gap: 6 }}>
                     <button className={`btn btn-sm ${view === 'pos' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('pos')}>🧾 POS</button>
                     <button className={`btn btn-sm ${view === 'history' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('history')}>📋 History</button>
-                    {['admin', 'manager', 'staff'].includes(useStore.getState().currentRole) && (
+                    {['admin', 'manager'].includes(currentRole) && (
                         <button className={`btn btn-sm ${view === 'manage' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('manage')}>⚙️ Manage Menu</button>
                     )}
                 </div>
             </div>
 
             {view === 'manage' ? (
-                <div className="card glass" style={{ maxWidth: 600, margin: '0 auto', padding: 24 }}>
-                    <h3 style={{ marginBottom: 16 }}>Add New Menu Item</h3>
-                    <form onSubmit={async (e) => {
-                        e.preventDefault();
-                        if (!newRecipe.name || newRecipe.price <= 0 || !newRecipe.ingId) return alert('Please fill all required fields');
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 20 }}>
+                    <div className="card glass" style={{ padding: 24 }}>
+                        <h3 style={{ marginBottom: 16 }}>{editingRecipeId ? 'Edit Recipe' : 'Add New Menu Item'}</h3>
+                        <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!newRecipe.name || newRecipe.price <= 0 || !newRecipe.ingId) return alert('Please fill all required fields, including linking a Main Ingredient.');
 
-                        await addRecipe({
-                            name: newRecipe.name, price: newRecipe.price, icon: newRecipe.icon, category: newRecipe.category,
-                            ingredients: [{ ingredientId: newRecipe.ingId, amount: newRecipe.ingAmount }]
-                        });
-                        alert('Recipe Added Successfully! It is now live across all POS terminals.');
-                        setNewRecipe({ name: '', price: 100, category: 'Fresh Juices', icon: '🍹', ingId: null, ingAmount: 1 });
-                    }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Item Name</label>
-                                <input className="input" required value={newRecipe.name} onChange={e => setNewRecipe({ ...newRecipe, name: e.target.value })} placeholder="e.g. Mango Magic" />
+                            try {
+                                if (editingRecipeId) {
+                                    await updateRecipe(editingRecipeId, {
+                                        name: newRecipe.name, price: newRecipe.price, icon: newRecipe.icon, category: newRecipe.category, is_available: newRecipe.isAvailable,
+                                        ingredients: [{ ingredientId: newRecipe.ingId, amount: newRecipe.ingAmount }]
+                                    });
+                                    alert('Recipe Updated Successfully!');
+                                    setEditingRecipeId(null);
+                                } else {
+                                    await addRecipe({
+                                        name: newRecipe.name, price: newRecipe.price, icon: newRecipe.icon, category: newRecipe.category, is_available: newRecipe.isAvailable,
+                                        ingredients: [{ ingredientId: newRecipe.ingId, amount: newRecipe.ingAmount }]
+                                    });
+                                    alert('Recipe Added Successfully!');
+                                }
+                                setNewRecipe({ name: '', price: 100, category: 'Fresh Juices', icon: '🍹', ingId: null, ingAmount: 1, isAvailable: true });
+                            } catch (error: any) {
+                                alert(`Failed to save menu item: ${error.message}`);
+                                console.error("Menu Add Error:", error);
+                            }
+                        }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Item Name</label>
+                                    <input className="input" required value={newRecipe.name} onChange={e => setNewRecipe({ ...newRecipe, name: e.target.value })} placeholder="e.g. Mango Magic" />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Price (₹)</label>
+                                    <input className="input" type="number" required value={newRecipe.price} onChange={e => setNewRecipe({ ...newRecipe, price: Number(e.target.value) })} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Category</label>
+                                    <input className="input" required value={newRecipe.category} onChange={e => setNewRecipe({ ...newRecipe, category: e.target.value })} list="categories-list" />
+                                    <datalist id="categories-list">
+                                        {categories.filter(c => c !== 'All').map(c => <option key={c} value={c} />)}
+                                    </datalist>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Display Icon (Emoji)</label>
+                                    <input className="input" required value={newRecipe.icon} onChange={e => setNewRecipe({ ...newRecipe, icon: e.target.value })} />
+                                </div>
                             </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Price (₹)</label>
-                                <input className="input" type="number" required value={newRecipe.price} onChange={e => setNewRecipe({ ...newRecipe, price: Number(e.target.value) })} />
+
+                            <div style={{ padding: 16, border: '1px solid var(--glass-border)', borderRadius: 8, marginBottom: 20 }}>
+                                <h4 style={{ fontSize: 13, marginBottom: 12 }}>Link Main Ingredient</h4>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <select className="input" style={{ flex: 1 }} required value={newRecipe.ingId || ''} onChange={e => setNewRecipe({ ...newRecipe, ingId: Number(e.target.value) })}>
+                                        <option value="" disabled>Select ingredient...</option>
+                                        {ingredients.length === 0 && <option value="" disabled>No ingredients found. Add in Inventory module first.</option>}
+                                        {ingredients.map(ing => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
+                                    </select>
+                                    <input className="input" type="number" required style={{ width: 100 }} placeholder="Qty" value={newRecipe.ingAmount} onChange={e => setNewRecipe({ ...newRecipe, ingAmount: Number(e.target.value) })} step="0.1" />
+                                </div>
                             </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Category</label>
-                                <input className="input" required value={newRecipe.category} onChange={e => setNewRecipe({ ...newRecipe, category: e.target.value })} list="categories-list" />
-                                <datalist id="categories-list">
-                                    {categories.filter(c => c !== 'All').map(c => <option key={c} value={c} />)}
-                                </datalist>
+
+                            <div style={{ display: 'flex', gap: 10 }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, flex: 2, padding: 12, background: 'rgba(0,0,0,0.02)', borderRadius: 8, border: '1px solid var(--glass-border)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={newRecipe.isAvailable} onChange={e => setNewRecipe({ ...newRecipe, isAvailable: e.target.checked })} style={{ width: 16, height: 16 }} />
+                                    Available for Sale
+                                </label>
+                                <button className="btn btn-primary" type="submit" style={{ flex: 3 }}>{editingRecipeId ? 'Save Changes' : 'Create & Publish'}</button>
+                                {editingRecipeId && <button className="btn btn-outline" type="button" onClick={() => { setEditingRecipeId(null); setNewRecipe({ name: '', price: 100, category: 'Fresh Juices', icon: '🍹', ingId: null, ingAmount: 1, isAvailable: true }); }}>Cancel</button>}
                             </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Display Icon (Emoji)</label>
-                                <input className="input" required value={newRecipe.icon} onChange={e => setNewRecipe({ ...newRecipe, icon: e.target.value })} />
-                            </div>
+                        </form>
+                    </div>
+
+                    <div className="card glass" style={{ padding: 24 }}>
+                        <h3 style={{ marginBottom: 16 }}>Live Menu Registry</h3>
+                        <div style={{ maxHeight: 500, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {recipes.map(r => (
+                                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, background: 'rgba(255,255,255,0.05)', borderRadius: 8, opacity: r.is_available === false ? 0.5 : 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <span style={{ fontSize: 24 }}>{r.icon}</span>
+                                        <div>
+                                            <div style={{ fontWeight: 700, fontSize: 14 }}>
+                                                {r.name}
+                                                {r.is_available === false && <span className="badge badge-error" style={{ marginLeft: 8, fontSize: 10 }}>Hidden</span>}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>₹{r.price} · {r.category}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button className="btn btn-sm btn-outline" onClick={async () => {
+                                            await updateRecipe(r.id, { is_available: r.is_available === false ? true : false });
+                                        }}>{r.is_available === false ? 'Show' : 'Hide'}</button>
+                                        <button className="btn btn-sm btn-outline" onClick={() => {
+                                            setEditingRecipeId(r.id);
+                                            setNewRecipe({
+                                                name: r.name, price: r.price, category: r.category, icon: r.icon,
+                                                ingId: r.ingredients[0]?.ingredientId || null,
+                                                ingAmount: r.ingredients[0]?.amount || 1,
+                                                isAvailable: r.is_available !== false
+                                            });
+                                        }}>Edit</button>
+                                        <button className="btn btn-sm btn-outline" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={async () => {
+                                            if (confirm(`Delete ${r.name}?`)) await deleteRecipe(r.id);
+                                        }}>Del</button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-
-                        <div style={{ padding: 16, border: '1px solid var(--glass-border)', borderRadius: 8, marginBottom: 20 }}>
-                            <h4 style={{ fontSize: 13, marginBottom: 12 }}>Link Main Ingredient (Required for auto-deduction)</h4>
-                            <div style={{ display: 'flex', gap: 12 }}>
-                                <select className="input" style={{ flex: 1 }} required value={newRecipe.ingId || ''} onChange={e => setNewRecipe({ ...newRecipe, ingId: Number(e.target.value) })}>
-                                    <option value="">Select ingredient...</option>
-                                    {ingredients.map(ing => <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>)}
-                                </select>
-                                <input className="input" type="number" required style={{ width: 100 }} placeholder="Qty" value={newRecipe.ingAmount} onChange={e => setNewRecipe({ ...newRecipe, ingAmount: Number(e.target.value) })} step="0.1" />
-                            </div>
-                        </div>
-
-                        <button className="btn btn-primary" type="submit" style={{ width: '100%' }}>Create & Publish Recipe</button>
-                    </form>
+                    </div>
                 </div>
             ) : view === 'history' ? (
                 <div className="glass" style={{ overflowX: 'auto' }}>
@@ -227,7 +308,7 @@ export default function POS() {
                             ))}
                         </div>
                         <div className={styles.grid}>
-                            {filtered.map(recipe => {
+                            {filtered.filter(r => r.is_available !== false).map(recipe => {
                                 const inCart = cart.find(c => c.recipeId === recipe.id);
                                 return (
                                     <div key={recipe.id} className={`${styles.productCard}`} onClick={() => addToCart(recipe)}>
@@ -272,7 +353,13 @@ export default function POS() {
                         </div>
 
                         <div className={styles.cartFooter}>
-                            <div className={styles.paymentRow}>
+                            <div style={{ padding: '0 0 16px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--glass-border)', marginBottom: 16 }}>
+                                <input type="text" className="input" placeholder="Customer Name (Optional)" value={customerName} onChange={e => setCustomerName(e.target.value)} style={{ padding: '8px 12px', fontSize: 13 }} />
+                                <input type="tel" className="input" placeholder="Phone Number" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} style={{ padding: '8px 12px', fontSize: 13 }} />
+                                <textarea className="input" placeholder="Order Notes..." rows={1} value={notes} onChange={e => setNotes(e.target.value)} style={{ padding: '8px 12px', fontSize: 13, resize: 'none' }}></textarea>
+                            </div>
+
+                            <div className={styles.paymentRow} style={{ marginBottom: 16 }}>
                                 {(['cash', 'card', 'upi'] as const).map(m => (
                                     <button key={m} className={`btn btn-sm ${payment === m ? 'btn-primary' : 'btn-outline'}`} onClick={() => setPayment(m)} style={{ textTransform: 'uppercase', fontWeight: 700 }}>{m}</button>
                                 ))}

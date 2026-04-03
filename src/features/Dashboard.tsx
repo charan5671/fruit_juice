@@ -3,9 +3,12 @@ import { useStore } from '@/lib/store';
 
 export default function Dashboard() {
     const { orders, ingredients, employees, attendance, outlets } = useStore();
-    const todayRevenue = orders.reduce((s, o) => s + o.total, 0);
+    const totalRevenue = orders.reduce((s, o) => s + o.total, 0);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayOrders = orders.filter(o => o.created_at?.startsWith(todayStr));
+    const todayRevenue = todayOrders.reduce((s, o) => s + o.total, 0);
     const lowStock = ingredients.filter(i => i.stock <= i.threshold).length;
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayStr;
     const presentToday = attendance.filter(a => a.date === today && a.check_in).length;
 
     return (
@@ -15,9 +18,9 @@ export default function Dashboard() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
                 <div className="card glass">
-                    <div className="stat-label">Total Revenue</div>
+                    <div className="stat-label">Today&apos;s Revenue</div>
                     <div className="stat-value" style={{ color: 'var(--primary)' }}>₹{todayRevenue.toLocaleString('en-IN')}</div>
-                    <div className="stat-change stat-up">↑ {orders.length} orders</div>
+                    <div className="stat-change stat-up">↑ {todayOrders.length} orders today · ₹{totalRevenue.toLocaleString('en-IN')} total</div>
                 </div>
                 <div className="card glass">
                     <div className="stat-label">Active Outlets</div>
@@ -40,12 +43,25 @@ export default function Dashboard() {
                 <div className="card glass">
                     <h4 style={{ marginBottom: 16 }}>Revenue Trend (Last 7 Days)</h4>
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
-                        {[35, 60, 45, 80, 55, 75, Math.min(100, todayRevenue / 20 + 10)].map((h, i) => (
-                            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                                <div style={{ width: '100%', height: `${h}%`, background: i === 6 ? 'var(--primary)' : 'var(--primary-glow)', borderRadius: '4px 4px 0 0', transition: 'height 0.5s' }} />
-                                <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}</span>
-                            </div>
-                        ))}
+                        {(() => {
+                            // Pre-compute revenue per day-of-week to avoid O(n²) recalculation
+                            const revenueByDay = [0, 0, 0, 0, 0, 0, 0]; // Sun=0..Sat=6
+                            orders.forEach(o => { revenueByDay[new Date(o.created_at).getDay()] += o.total; });
+                            const maxRev = Math.max(1, ...revenueByDay);
+                            const todayJs = new Date().getDay();
+
+                            return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, i) => {
+                                const jsDay = i === 6 ? 0 : i + 1;
+                                const h = Math.max(5, Math.round((revenueByDay[jsDay] / maxRev) * 100));
+                                const isToday = todayJs === jsDay;
+                                return (
+                                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                    <div style={{ width: '100%', height: `${h}%`, background: isToday ? 'var(--primary)' : 'var(--primary-glow)', borderRadius: '4px 4px 0 0', transition: 'height 0.5s' }} />
+                                    <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: isToday ? 800 : 400 }}>{dayName}</span>
+                                </div>
+                                );
+                            });
+                        })()}
                     </div>
                 </div>
 

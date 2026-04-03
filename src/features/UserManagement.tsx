@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useState } from 'react';
 
 export default function UserManagement() {
-    const { employees, addEmployee, updateEmployee, deleteEmployee, outlets } = useStore();
+    const { employees, addEmployee, updateEmployee, deleteEmployee, outlets, refreshData } = useStore();
     const [filter, setFilter] = useState<'pending' | 'active' | 'all'>('pending');
     const [view, setView] = useState<'list' | 'add'>('list');
 
@@ -27,24 +27,36 @@ export default function UserManagement() {
     };
 
     const approveUser = async (id: number) => {
-        await supabase.from('employees').update({ status: 'active' }).eq('id', id);
-        await supabase.from('notifications').insert({
-            type: 'success', title: 'Account Approved', message: `Employee #${id} has been activated`, module: 'admin',
-        });
-        useStore.getState().refreshData();
+        try {
+            await supabase.from('employees').update({ status: 'active' }).eq('id', id);
+            await supabase.from('notifications').insert({
+                type: 'success', title: 'Account Approved', message: `Employee #${id} has been activated`, module: 'admin',
+            });
+            await refreshData(['Settings']);
+        } catch (err: any) {
+            alert(`Failed to approve user: ${err.message}`);
+        }
     };
 
     const terminateUser = async (id: number) => {
-        await supabase.from('employees').update({ status: 'terminated' }).eq('id', id);
-        useStore.getState().refreshData();
+        try {
+            await supabase.from('employees').update({ status: 'terminated' }).eq('id', id);
+            await refreshData(['Settings']);
+        } catch (err: any) {
+            alert(`Failed to terminate user: ${err.message}`);
+        }
     };
 
     const changeRole = async (id: number, role: string) => {
-        await supabase.from('employees').update({ role }).eq('id', id);
-        await supabase.from('audit_log').insert({
-            action: 'ROLE_CHANGED', user_id: useStore.getState().currentEmployeeId, user_name: useStore.getState().currentName, module: 'admin', details: `Employee #${id} → ${role}`,
-        });
-        useStore.getState().refreshData();
+        try {
+            await supabase.from('employees').update({ role }).eq('id', id);
+            await supabase.from('audit_log').insert({
+                action: 'ROLE_CHANGED', user_id: useStore.getState().currentEmployeeId, user_name: useStore.getState().currentName, module: 'admin', details: `Employee #${id} → ${role}`,
+            });
+            await refreshData(['Settings']);
+        } catch (err: any) {
+            alert(`Failed to change role: ${err.message}`);
+        }
     };
 
     return (
@@ -80,7 +92,7 @@ export default function UserManagement() {
                             <select className="input" value={newEmp.role} onChange={e => setNewEmp({ ...newEmp, role: e.target.value })}>
                                 <option value="seller">Seller</option>
                                 <option value="staff">Staff</option>
-                                <option value="manager">Manager</option>
+                                <option value="manager">Inventory Manager</option>
                                 <option value="procurement">Procurement</option>
                                 <option value="admin">Admin</option>
                             </select>
@@ -125,7 +137,7 @@ export default function UserManagement() {
                                                         <select className="input" value={editData.role} onChange={e => setEditData({ ...editData, role: e.target.value })} style={{ width: 'auto', fontSize: 12, padding: '4px 8px' }}>
                                                             <option value="seller">Seller</option>
                                                             <option value="staff">Staff</option>
-                                                            <option value="manager">Manager</option>
+                                                            <option value="manager">Inventory Manager</option>
                                                             <option value="procurement">Procurement</option>
                                                             <option value="admin">Admin</option>
                                                         </select>

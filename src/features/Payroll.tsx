@@ -3,9 +3,11 @@ import { useStore } from '@/lib/store';
 import { useState } from 'react';
 
 export default function Payroll() {
-    const { employees, payroll, runPayroll } = useStore();
-    const [month, setMonth] = useState('2026-03');
-    const monthPayroll = payroll.filter(p => p.month === month);
+    const { employees, payroll, runPayroll, currentRole, currentEmployeeId } = useStore();
+    const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+    // R1: Non-admin/manager only see their own payroll records
+    const isPrivileged = ['admin', 'manager'].includes(currentRole);
+    const monthPayroll = payroll.filter(p => p.month === month && (isPrivileged || p.employee_id === currentEmployeeId));
 
     return (
         <div className="animate-in">
@@ -16,14 +18,16 @@ export default function Payroll() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input className="input" type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 'auto' }} />
-                    <button className="btn btn-primary" onClick={() => runPayroll(month)}>Generate Payroll</button>
+                    {isPrivileged && (
+                        <button className="btn btn-primary" onClick={() => runPayroll(month)}>Generate Payroll</button>
+                    )}
                 </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
                 <div className="card glass">
                     <div className="stat-label">Total Payroll</div>
-                    <div className="stat-value" style={{ color: 'var(--primary)' }}>₹{monthPayroll.reduce((s, p) => s + p.net_pay, 0).toLocaleString('en-IN')}</div>
+                    <div className="stat-value" style={{ color: 'var(--primary)' }}>₹{monthPayroll.reduce((s, p) => s + Number(p.net_pay || 0), 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div className="card glass">
                     <div className="stat-label">Employees</div>
@@ -31,7 +35,7 @@ export default function Payroll() {
                 </div>
                 <div className="card glass">
                     <div className="stat-label">Total Deductions</div>
-                    <div className="stat-value" style={{ color: 'var(--danger)' }}>₹{monthPayroll.reduce((s, p) => s + p.deductions, 0).toLocaleString('en-IN')}</div>
+                    <div className="stat-value" style={{ color: 'var(--danger)' }}>₹{monthPayroll.reduce((s, p) => s + Number(p.deductions || 0), 0).toLocaleString('en-IN')}</div>
                 </div>
             </div>
 
@@ -51,10 +55,10 @@ export default function Payroll() {
                                         <td style={{ fontWeight: 700 }}>{emp?.name || '—'}</td>
                                         <td>{p.days_present}/{p.total_days}</td>
                                         <td>{p.hours_worked}h</td>
-                                        <td>₹{p.base_pay.toLocaleString('en-IN')}</td>
-                                        <td style={{ color: 'var(--primary)' }}>+₹{p.overtime.toLocaleString('en-IN')}</td>
-                                        <td style={{ color: 'var(--danger)' }}>-₹{p.deductions.toLocaleString('en-IN')}</td>
-                                        <td style={{ fontWeight: 800, fontSize: 15 }}>₹{p.net_pay.toLocaleString('en-IN')}</td>
+                                        <td>₹{Number(p.base_pay || 0).toLocaleString('en-IN')}</td>
+                                        <td style={{ color: 'var(--primary)' }}>+₹{Number(p.overtime || 0).toLocaleString('en-IN')}</td>
+                                        <td style={{ color: 'var(--danger)' }}>-₹{Number(p.deductions || 0).toLocaleString('en-IN')}</td>
+                                        <td style={{ fontWeight: 800, fontSize: 15 }}>₹{Number(p.net_pay || 0).toLocaleString('en-IN')}</td>
                                         <td><span className={`badge ${p.status === 'paid' ? 'badge-success' : p.status === 'approved' ? 'badge-info' : 'badge-warning'}`}>{p.status}</span></td>
                                     </tr>
                                 );

@@ -35,7 +35,6 @@ export default function Login() {
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError(''); setSuccess(''); setLoading(true);
         try {
             const err = await signIn(email, password);
             if (err) {
@@ -51,13 +50,13 @@ export default function Login() {
             }
         } catch {
             setError('Account error. Please check your connection.');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError(''); setSuccess(''); setLoading(true);
         try {
             const { error: regErr } = await signUp(email, password, name, role);
             if (regErr) {
@@ -73,8 +72,9 @@ export default function Login() {
             }
         } catch {
             setError('Registration failed. Please check your connectivity.');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const [resetCooldown, setResetCooldown] = useState(0);
@@ -87,7 +87,6 @@ export default function Login() {
     const handleForgot = async (e: React.FormEvent) => {
         e.preventDefault();
         if (resetCooldown > 0) return;
-        setError(''); setSuccess(''); setLoading(true);
         try {
             const err = await forgotPassword(email);
             if (err) setError(err.message);
@@ -97,8 +96,9 @@ export default function Login() {
             }
         } catch {
             setError('Recovery failed. Please try again later.');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleReset = async (e: React.FormEvent) => {
@@ -153,8 +153,8 @@ export default function Login() {
             setLoading(false);
         } else {
             setError('Biometric not available on this device.');
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     return (
@@ -240,7 +240,7 @@ export default function Login() {
                             <label>Requested Role</label>
                             <select className="input" value={role} onChange={e => setRole(e.target.value)}>
                                 <option value="seller">Seller / POS</option>
-                                <option value="manager">Store Manager</option>
+                                <option value="manager">Inventory Manager</option>
                                 <option value="procurement">Procurement Officer</option>
                                 <option value="staff">Staff Member</option>
                             </select>

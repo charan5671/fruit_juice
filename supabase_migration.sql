@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS payroll CASCADE;
 DROP TABLE IF EXISTS attendance CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS purchase_orders CASCADE;
+DROP TABLE IF EXISTS production_logs CASCADE;
 DROP TABLE IF EXISTS recipes CASCADE;
 DROP TABLE IF EXISTS ingredients CASCADE;
 DROP TABLE IF EXISTS employees CASCADE;
@@ -53,7 +54,7 @@ CREATE TABLE employees (
   id BIGSERIAL PRIMARY KEY,
   auth_uid UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','manager','seller','staff')),
+  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','manager','seller','staff','procurement')),
   email TEXT NOT NULL UNIQUE,
   phone TEXT NOT NULL DEFAULT '',
   outlet_id BIGINT REFERENCES outlets(id) ON DELETE SET NULL,
@@ -81,7 +82,19 @@ CREATE TABLE recipes (
   price NUMERIC NOT NULL DEFAULT 0,
   icon TEXT NOT NULL DEFAULT '🍹',
   category TEXT NOT NULL DEFAULT 'Classic',
+  is_available BOOLEAN DEFAULT true,
   ingredients JSONB NOT NULL DEFAULT '[]',
+  outlet_id BIGINT REFERENCES outlets(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── 5B. PRODUCTION LOGS ────────────────────────────────────
+CREATE TABLE production_logs (
+  id BIGSERIAL PRIMARY KEY,
+  product_id BIGINT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  quantity NUMERIC NOT NULL DEFAULT 1,
+  fruits_used JSONB NOT NULL DEFAULT '[]',
+  notes TEXT DEFAULT '',
   outlet_id BIGINT REFERENCES outlets(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -89,6 +102,10 @@ CREATE TABLE recipes (
 -- ─── 6. ORDERS (linked to outlet + seller) ──────────────────
 CREATE TABLE orders (
   id BIGSERIAL PRIMARY KEY,
+  customer_name TEXT DEFAULT '',
+  customer_phone TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'Delivered' CHECK (status IN ('Pending','Processing','Ready','Delivered','Cancelled')),
+  notes TEXT DEFAULT '',
   items JSONB NOT NULL DEFAULT '[]',
   total NUMERIC NOT NULL DEFAULT 0,
   outlet_id BIGINT REFERENCES outlets(id) ON DELETE SET NULL,
@@ -275,13 +292,17 @@ CREATE TRIGGER on_auth_user_provision_after
   FOR EACH ROW EXECUTE FUNCTION public.provision_employee_after();
 
 -- ─── ATOMIC ORDER FUNCTION (handles stock deduction) ────────
-DROP FUNCTION IF EXISTS create_order(jsonb,numeric,text,bigint,bigint) CASCADE;
+DROP FUNCTION IF EXISTS create_order(jsonb,numeric,text,bigint,bigint,text,text,text,text) CASCADE;
 CREATE OR REPLACE FUNCTION create_order(
   p_items JSONB,
   p_total NUMERIC,
   p_payment_method TEXT,
   p_outlet_id BIGINT,
-  p_seller_id BIGINT
+  p_seller_id BIGINT,
+  p_customer_name TEXT DEFAULT '',
+  p_customer_phone TEXT DEFAULT '',
+  p_notes TEXT DEFAULT '',
+  p_status TEXT DEFAULT 'Delivered'
 ) RETURNS JSONB AS $$
 DECLARE
   new_order_id BIGINT;
@@ -290,8 +311,8 @@ DECLARE
   ing_record RECORD;
 BEGIN
   -- 1. Create the order
-  INSERT INTO orders (items, total, outlet_id, seller_id, payment_method)
-  VALUES (p_items, p_total, p_outlet_id, p_seller_id, p_payment_method)
+  INSERT INTO orders (items, total, outlet_id, seller_id, payment_method, customer_name, customer_phone, notes, status)
+  VALUES (p_items, p_total, p_outlet_id, p_seller_id, p_payment_method, p_customer_name, p_customer_phone, p_notes, p_status)
   RETURNING id INTO new_order_id;
 
   -- 2. Deduct ingredients
@@ -327,6 +348,7 @@ ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingredients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recipes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE production_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
@@ -346,23 +368,27 @@ CREATE POLICY "employees_self_update" ON employees FOR UPDATE USING (auth_uid = 
 
 -- ── SUPPLIERS ───────────────────────────────────────────────
 CREATE POLICY "suppliers_select" ON suppliers FOR SELECT USING (true);
-CREATE POLICY "suppliers_write" ON suppliers FOR ALL USING (get_my_role() IN ('admin','manager')) WITH CHECK (get_my_role() IN ('admin','manager'));
+CREATE POLICY "suppliers_write" ON suppliers FOR ALL USING (get_my_role() IN ('admin','manager','procurement')) WITH CHECK (get_my_role() IN ('admin','manager','procurement'));
 
 -- ── INGREDIENTS ─────────────────────────────────────────────
 CREATE POLICY "ingredients_select" ON ingredients FOR SELECT USING (true);
-CREATE POLICY "ingredients_write" ON ingredients FOR ALL USING (get_my_role() IN ('admin','manager','seller')) WITH CHECK (get_my_role() IN ('admin','manager','seller'));
+CREATE POLICY "ingredients_write" ON ingredients FOR ALL USING (get_my_role() IN ('admin','manager','seller','procurement')) WITH CHECK (get_my_role() IN ('admin','manager','seller','procurement'));
 
 -- ── RECIPES ─────────────────────────────────────────────────
 CREATE POLICY "recipes_select" ON recipes FOR SELECT USING (true);
-CREATE POLICY "recipes_admin" ON recipes FOR ALL USING (get_my_role() = 'admin') WITH CHECK (get_my_role() = 'admin');
+CREATE POLICY "recipes_write" ON recipes FOR ALL USING (get_my_role() IN ('admin','manager')) WITH CHECK (get_my_role() IN ('admin','manager'));
+
+-- ── PRODUCTION LOGS ─────────────────────────────────────────
+CREATE POLICY "production_logs_select" ON production_logs FOR SELECT USING (true);
+CREATE POLICY "production_logs_write" ON production_logs FOR ALL USING (get_my_role() IN ('admin','manager','seller')) WITH CHECK (get_my_role() IN ('admin','manager','seller'));
 
 -- ── ORDERS: Seller+Manager+Admin create/read ────────────────
 CREATE POLICY "orders_select" ON orders FOR SELECT USING (true);
-CREATE POLICY "orders_insert" ON orders FOR INSERT WITH CHECK (get_my_role() IN ('admin','manager','seller'));
+CREATE POLICY "orders_write" ON orders FOR ALL USING (get_my_role() IN ('admin','manager','seller')) WITH CHECK (get_my_role() IN ('admin','manager','seller'));
 
 -- ── PURCHASE ORDERS ─────────────────────────────────────────
 CREATE POLICY "po_select" ON purchase_orders FOR SELECT USING (true);
-CREATE POLICY "po_write" ON purchase_orders FOR ALL USING (get_my_role() IN ('admin','manager')) WITH CHECK (get_my_role() IN ('admin','manager'));
+CREATE POLICY "po_write" ON purchase_orders FOR ALL USING (get_my_role() IN ('admin','manager','procurement')) WITH CHECK (get_my_role() IN ('admin','manager','procurement'));
 
 -- ── ATTENDANCE: Self or admin/manager ───────────────────────
 CREATE POLICY "attendance_select" ON attendance FOR SELECT USING (
@@ -397,6 +423,7 @@ DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE suppliers;
   ALTER PUBLICATION supabase_realtime ADD TABLE ingredients;
   ALTER PUBLICATION supabase_realtime ADD TABLE recipes;
+  ALTER PUBLICATION supabase_realtime ADD TABLE production_logs;
   ALTER PUBLICATION supabase_realtime ADD TABLE orders;
   ALTER PUBLICATION supabase_realtime ADD TABLE purchase_orders;
   ALTER PUBLICATION supabase_realtime ADD TABLE attendance;
