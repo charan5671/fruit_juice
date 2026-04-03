@@ -60,7 +60,7 @@ export default function Home() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
         <span style={{ fontSize: 48, animation: 'pulse 1.5s infinite' }}>🍹</span>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>Loading...</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>Verifying session...</div>
       </div>
     );
   }
@@ -99,7 +99,7 @@ export default function Home() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 16 }}>
         <span style={{ fontSize: 48, animation: 'pulse 1.5s infinite' }}>🍹</span>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>Syncing with database...</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>Syncing enterprise data...</div>
       </div>
     );
   }

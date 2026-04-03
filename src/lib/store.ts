@@ -27,6 +27,7 @@ interface AppState {
     attendance: AttendanceRecord[]; payroll: PayrollRecord[]; notifications: Notification[];
     _hasHydrated: boolean;
     lastSyncedAt: string | null;
+    isRefreshing: boolean;
     setHasHydrated: (state: boolean) => void;
 
     setActiveTab: (t: ActiveTab) => void; toggleTheme: () => void; setMobileMenuOpen: (v: boolean) => void;
@@ -69,15 +70,17 @@ export const useStore = create<AppState>()(
             suppliers: [], employees: [], attendance: [], payroll: [], notifications: [],
             _hasHydrated: false,
             lastSyncedAt: null,
+            isRefreshing: false,
             setHasHydrated: (state) => set({ _hasHydrated: state }),
 
             resetStore: () => set({
                 outlets: [], ingredients: [], recipes: [], orders: [], productionLogs: [], purchaseOrders: [],
                 suppliers: [], employees: [], attendance: [], payroll: [], notifications: [],
-                initialized: false, currentEmployeeId: null, currentRole: 'staff', currentName: ''
+                initialized: false, currentEmployeeId: null, currentRole: 'staff', currentName: '',
+                isRefreshing: false
             }),
 
-    setActiveTab: (t) => {
+            setActiveTab: (t) => {
         set({ activeTab: t, mobileMenuOpen: false });
         // Lazy load data for specific tabs
         const { refreshData } = get();
@@ -132,61 +135,66 @@ export const useStore = create<AppState>()(
     },
 
     refreshData: async (tabs) => {
-        const fetchers: Record<string, any> = {};
+        if (get().isRefreshing) return;
+        set({ isRefreshing: true });
+        try {
+            const fetchers: Record<string, any> = {};
 
-        // Core/Common data
-        if (!tabs || tabs.includes('Dashboard') || tabs.includes('Settings')) {
-            fetchers.outlets = supabase.from('outlets').select('*');
-            fetchers.employees = supabase.from('employees').select('*');
-        }
-
-        // Notifications (independent path)
-        if (!tabs || tabs.includes('Notifications') || tabs.includes('Dashboard') || tabs.includes('Settings')) {
-            fetchers.notifications = supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(20);
-        }
-
-        // Inventory & Recipes (Essential for POS)
-        if (!tabs || tabs.includes('Inventory') || tabs.includes('POS')) {
-            fetchers.ingredients = supabase.from('ingredients').select('*');
-            fetchers.recipes = supabase.from('recipes').select('*');
-        }
-
-        // Historical Data (Lazy)
-        if (!tabs || tabs.includes('POS') || tabs.includes('Orders') || tabs.includes('Analytics')) {
-            fetchers.orders = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(50);
-        }
-
-        if (!tabs || tabs.includes('Production')) {
-            fetchers.productionLogs = supabase.from('production_logs').select('*').order('created_at', { ascending: false }).limit(30);
-        }
-
-        if (!tabs || tabs.includes('Procurement')) {
-            fetchers.purchaseOrders = supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(30);
-            fetchers.suppliers = supabase.from('suppliers').select('*');
-        }
-
-        if (!tabs || tabs.includes('Workforce') || tabs.includes('Payroll')) {
-            fetchers.attendance = supabase.from('attendance').select('*').order('id', { ascending: false }).limit(50);
-        }
-
-        if (!tabs || tabs.includes('Payroll')) {
-            fetchers.payroll = supabase.from('payroll').select('*');
-        }
-
-        const keys = Object.keys(fetchers);
-        const results = await Promise.allSettled(Object.values(fetchers));
-
-        const newState: Partial<AppState> = {};
-        keys.forEach((key, i) => {
-            const result = results[i];
-            if (result.status === 'fulfilled' && result.value.data) {
-                newState[key as keyof AppState] = result.value.data as any;
+            // 1. Critical Core (Always needed for app stability)
+            if (!tabs || tabs.includes('Settings')) {
+                fetchers.outlets = supabase.from('outlets').select('id, name, address, phone');
+                fetchers.employees = supabase.from('employees').select('id, name, role, email, outlet_id, status');
             }
-            // On rejection, keep existing data — don't wipe with empty array
-        });
 
-        newState.lastSyncedAt = new Date().toISOString();
-        set(newState as any);
+            // 2. High Priority (Directly impact Dashboard/POS)
+            if (!tabs || tabs.includes('Inventory') || tabs.includes('POS')) {
+                fetchers.ingredients = supabase.from('ingredients').select('id, name, unit, threshold, stock');
+                fetchers.recipes = supabase.from('recipes').select('id, name, price, ingredients, category');
+            }
+
+            // 3. User Feedback (Notifications)
+            if (!tabs || tabs.includes('Notifications') || tabs.includes('Dashboard')) {
+                fetchers.notifications = supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(10);
+            }
+
+            // 4. Historical/Analytics (Heavier - Paged with strict limits)
+            if (!tabs || tabs.includes('Orders') || tabs.includes('Analytics') || tabs.includes('Dashboard')) {
+                fetchers.orders = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(25);
+            }
+
+            if (!tabs || tabs.includes('Production')) {
+                fetchers.productionLogs = supabase.from('production_logs').select('*').order('created_at', { ascending: false }).limit(20);
+            }
+
+            if (!tabs || tabs.includes('Workforce') || tabs.includes('Payroll')) {
+                fetchers.attendance = supabase.from('attendance').select('*').order('date', { ascending: false }).limit(30);
+            }
+
+            if (tabs?.includes('Procurement')) {
+                fetchers.purchaseOrders = supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(25);
+                fetchers.suppliers = supabase.from('suppliers').select('*');
+            }
+
+            if (tabs?.includes('Payroll')) {
+                fetchers.payroll = supabase.from('payroll').select('*');
+            }
+
+            const keys = Object.keys(fetchers);
+            if (keys.length > 0) {
+                const results = await Promise.allSettled(Object.values(fetchers));
+                const newState: Partial<AppState> = {};
+                keys.forEach((key, i) => {
+                    const result = results[i] as any;
+                    if (result.status === 'fulfilled' && result.value?.data) {
+                        newState[key as keyof AppState] = result.value.data as any;
+                    }
+                });
+                newState.lastSyncedAt = new Date().toISOString();
+                set(newState as any);
+            }
+        } finally {
+            set({ isRefreshing: false });
+        }
     },
 
     completeSale: async (items, paymentMethod, customerName = '', customerPhone = '', notes = '', status = 'Pending') => {

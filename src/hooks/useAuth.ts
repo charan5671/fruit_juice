@@ -62,28 +62,29 @@ export function useAuth() {
             let profile = null;
 
             if (session?.user) {
-                // Instant Local Cache Hydration (Zero Latency Unblock)
+                // 1. Instant Cache Check
                 const cached = localStorage.getItem('fjc-profile');
                 if (cached) {
-                    try {
-                        profile = JSON.parse(cached);
-                        setAuth({ session, user: session.user, employeeProfile: profile, loading: false });
-                    } catch (e) { }
+                    try { profile = JSON.parse(cached); } catch (e) { }
                 }
 
-                // Background Network Synchronization
-                const freshProfile = await loadProfile(session.user.id);
-                if (freshProfile) {
-                    localStorage.setItem('fjc-profile', JSON.stringify(freshProfile));
-                    profile = freshProfile;
-                }
+                // 2. Unblock UI Immediately (Critical Path)
+                setAuth({ session, user: session.user, employeeProfile: profile, loading: false });
+
+                // 3. Background Refresh (Secondary Path)
+                loadProfile(session.user.id).then(fresh => {
+                    if (fresh) {
+                        localStorage.setItem('fjc-profile', JSON.stringify(fresh));
+                        setAuth(prev => ({ ...prev, employeeProfile: fresh }));
+                    }
+                });
                 interval = setInterval(checkDeviceBinding, 15000);
             } else {
                 localStorage.removeItem('fjc-profile');
                 if (typeof window !== 'undefined') localStorage.removeItem('fjc-device-id');
                 useStore.getState().resetStore();
+                setAuth({ session: null, user: null, employeeProfile: null, loading: false });
             }
-            setAuth({ session, user: session?.user || null, employeeProfile: profile, loading: false });
         };
 
         initAuth();
