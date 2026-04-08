@@ -15,6 +15,10 @@ DROP FUNCTION IF EXISTS get_my_employee_id() CASCADE;
 DROP FUNCTION IF EXISTS get_my_outlet_id() CASCADE;
 DROP FUNCTION IF EXISTS register_employee(UUID, TEXT, TEXT, TEXT) CASCADE;
 
+-- Production atomic RPCs (added for correctness + consistency)
+DROP FUNCTION IF EXISTS public.log_production_batch(bigint, bigint, numeric, jsonb, text, bigint) CASCADE;
+DROP FUNCTION IF EXISTS public.delete_production_log_and_restore(bigint, bigint) CASCADE;
+
 DROP TABLE IF EXISTS audit_log CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS payroll CASCADE;
@@ -54,7 +58,7 @@ CREATE TABLE employees (
   id BIGSERIAL PRIMARY KEY,
   auth_uid UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','manager','seller','staff','procurement')),
+  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','manager','seller','staff','procurement','logistics')),
   email TEXT NOT NULL UNIQUE,
   phone TEXT NOT NULL DEFAULT '',
   outlet_id BIGINT REFERENCES outlets(id) ON DELETE SET NULL,
@@ -340,6 +344,120 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- ─── ATOMIC PRODUCTION LOG FUNCTION ─────────────────────────
+-- Inserts a production log and deducts raw inventory atomically.
+CREATE OR REPLACE FUNCTION public.log_production_batch(
+  p_employee_id BIGINT,
+  p_product_id BIGINT,
+  p_quantity NUMERIC,
+  p_fruits_used JSONB,
+  p_notes TEXT,
+  p_outlet_id BIGINT
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_log_id BIGINT;
+  item RECORD;
+  v_ingredient_id BIGINT;
+  v_amount NUMERIC;
+BEGIN
+  -- Permission gate (server-side, not just UI)
+  IF get_my_role() NOT IN ('admin','manager','seller','procurement') THEN
+    RAISE EXCEPTION 'Forbidden';
+  END IF;
+
+  IF get_my_employee_id() IS NULL OR p_employee_id IS DISTINCT FROM get_my_employee_id() THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  -- Insert log
+  INSERT INTO public.production_logs (product_id, quantity, fruits_used, notes, outlet_id)
+  VALUES (p_product_id, p_quantity, COALESCE(p_fruits_used, '[]'::jsonb), COALESCE(p_notes, ''), p_outlet_id)
+  RETURNING id INTO v_log_id;
+
+  -- Deduct ingredients
+  FOR item IN SELECT * FROM jsonb_array_elements(COALESCE(p_fruits_used, '[]'::jsonb)) LOOP
+    v_ingredient_id := (item.value->>'ingredientId')::BIGINT;
+    v_amount := (item.value->>'amount')::NUMERIC;
+
+    UPDATE public.ingredients
+    SET stock = stock - v_amount,
+        last_updated = now()
+    WHERE id = v_ingredient_id AND stock >= v_amount;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Insufficient stock for ingredient %', v_ingredient_id;
+    END IF;
+  END LOOP;
+
+  INSERT INTO public.audit_log (action, user_id, module, details)
+  VALUES (
+    'PRODUCTION_LOGGED',
+    p_employee_id,
+    'production',
+    'Logged production batch (log id: ' || v_log_id || ')'
+  );
+
+  RETURN jsonb_build_object('success', true, 'log_id', v_log_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ─── ATOMIC PRODUCTION DELETE FUNCTION ───────────────────────
+-- Deletes a production log and restores inventory atomically.
+CREATE OR REPLACE FUNCTION public.delete_production_log_and_restore(
+  p_employee_id BIGINT,
+  p_log_id BIGINT
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_fruits_used JSONB;
+  v_deleted RECORD;
+  item RECORD;
+  v_ingredient_id BIGINT;
+  v_amount NUMERIC;
+BEGIN
+  IF get_my_role() NOT IN ('admin','manager','seller') THEN
+    RAISE EXCEPTION 'Forbidden';
+  END IF;
+
+  IF get_my_employee_id() IS NULL OR p_employee_id IS DISTINCT FROM get_my_employee_id() THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  SELECT fruits_used INTO v_fruits_used
+  FROM public.production_logs
+  WHERE id = p_log_id
+  FOR UPDATE;
+
+  IF v_fruits_used IS NULL THEN
+    RAISE EXCEPTION 'Production log not found';
+  END IF;
+
+  -- Restore inventory first while lock is held (still inside function)
+  FOR item IN SELECT * FROM jsonb_array_elements(COALESCE(v_fruits_used, '[]'::jsonb)) LOOP
+    v_ingredient_id := (item.value->>'ingredientId')::BIGINT;
+    v_amount := (item.value->>'amount')::NUMERIC;
+
+    UPDATE public.ingredients
+    SET stock = stock + v_amount,
+        last_updated = now()
+    WHERE id = v_ingredient_id;
+  END LOOP;
+
+  DELETE FROM public.production_logs WHERE id = p_log_id;
+
+  INSERT INTO public.audit_log (action, user_id, module, details)
+  VALUES (
+    'PRODUCTION_DELETED',
+    p_employee_id,
+    'production',
+    'Deleted production log #' || p_log_id
+  );
+
+  RETURN jsonb_build_object('success', true);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- =============================================================
 -- ROW LEVEL SECURITY
 -- =============================================================
@@ -382,9 +500,9 @@ CREATE POLICY "recipes_write" ON recipes FOR ALL USING (get_my_role() IN ('admin
 CREATE POLICY "production_logs_select" ON production_logs FOR SELECT USING (true);
 CREATE POLICY "production_logs_write" ON production_logs FOR ALL USING (get_my_role() IN ('admin','manager','seller')) WITH CHECK (get_my_role() IN ('admin','manager','seller'));
 
--- ── ORDERS: Seller+Manager+Admin create/read ────────────────
+-- ── ORDERS: Seller+Manager+Admin+Logistics create/read/update ────────────────
 CREATE POLICY "orders_select" ON orders FOR SELECT USING (true);
-CREATE POLICY "orders_write" ON orders FOR ALL USING (get_my_role() IN ('admin','manager','seller')) WITH CHECK (get_my_role() IN ('admin','manager','seller'));
+CREATE POLICY "orders_write" ON orders FOR ALL USING (get_my_role() IN ('admin','manager','seller','logistics')) WITH CHECK (get_my_role() IN ('admin','manager','seller','logistics'));
 
 -- ── PURCHASE ORDERS ─────────────────────────────────────────
 CREATE POLICY "po_select" ON purchase_orders FOR SELECT USING (true);

@@ -6,7 +6,7 @@
 
 -- 1. Update the role constraint
 ALTER TABLE public.employees DROP CONSTRAINT IF EXISTS employees_role_check;
-ALTER TABLE public.employees ADD CONSTRAINT employees_role_check CHECK (role IN ('admin','manager','seller','staff','procurement'));
+ALTER TABLE public.employees ADD CONSTRAINT employees_role_check CHECK (role IN ('admin','manager','seller','staff','procurement','logistics'));
 
 -- 2. Update Suppliers RLS
 DROP POLICY IF EXISTS "suppliers_write" ON suppliers;

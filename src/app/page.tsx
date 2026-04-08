@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStore } from '@/lib/store';
+import { allowedTabsForRole, canAccessTab } from '@/lib/rbac';
 import Login from '@/features/Login';
 import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
@@ -17,22 +18,15 @@ import UserManagement from '@/features/UserManagement';
 import Profile from '@/features/Profile';
 import Orders from '@/features/Orders';
 import Production from '@/features/Production';
+import Shipping from '@/features/Shipping';
 
 const modules: Record<string, React.ComponentType> = {
-  Dashboard, POS, Orders, Production, Inventory, Procurement, Workforce, Payroll, Analytics, Notifications, UserManagement, Settings: Profile,
-};
-
-const ROLE_PERMISSIONS: Record<string, string[]> = {
-  admin: ['Dashboard', 'POS', 'Orders', 'Production', 'Inventory', 'Procurement', 'Workforce', 'Payroll', 'Analytics', 'Notifications', 'UserManagement', 'Settings'],
-  manager: ['Dashboard', 'POS', 'Orders', 'Production', 'Inventory', 'Procurement', 'Workforce', 'Notifications', 'Settings'],
-  procurement: ['Procurement', 'Inventory', 'Notifications', 'Settings'],
-  seller: ['POS', 'Orders', 'Production', 'Inventory', 'Notifications', 'Settings'],
-  staff: ['Workforce', 'Payroll', 'Notifications', 'Settings'],
+  Dashboard, POS, Orders, Shipping, Production, Inventory, Procurement, Workforce, Payroll, Analytics, Notifications, UserManagement, Settings: Profile,
 };
 
 export default function Home() {
   const { session, user, employeeProfile, loading: authLoading, signOut } = useAuth();
-  const { activeTab, initialized, initialize, mobileMenuOpen, setMobileMenuOpen, currentRole, setActiveTab, _hasHydrated } = useStore();
+  const { activeTab, initialized, initialize, currentRole, setActiveTab, _hasHydrated } = useStore();
 
   // Hydration guard moved BELOW all hooks to comply with Rules of Hooks
 
@@ -42,12 +36,11 @@ export default function Home() {
     }
   }, [_hasHydrated, session, user, employeeProfile, authLoading, initialized, initialize]);
 
-  // Role Gate check
+  // Role gate: keep active tab within RBAC (same list as Sidebar)
   useEffect(() => {
     if (_hasHydrated && initialized && currentRole) {
-      const allowed = ROLE_PERMISSIONS[currentRole] || [];
-      if (!allowed.includes(activeTab)) {
-        setActiveTab(allowed[0] as any);
+      if (!canAccessTab(currentRole, activeTab)) {
+        setActiveTab(allowedTabsForRole(currentRole)[0]);
       }
     }
   }, [_hasHydrated, initialized, currentRole, activeTab, setActiveTab]);
@@ -67,6 +60,20 @@ export default function Home() {
 
   // Not authenticated
   if (!session || !user) return <Login />;
+
+  // Authenticated but missing profile (usually indicates DB trigger/policy issue)
+  if (!employeeProfile) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: 20, padding: 32, textAlign: 'center' }}>
+        <span style={{ fontSize: 56 }}>⚠️</span>
+        <h2 style={{ fontSize: 24, fontWeight: 800 }}>Profile Setup Incomplete</h2>
+        <p style={{ color: 'var(--text-secondary)', maxWidth: 520, lineHeight: 1.6 }}>
+          Your account was authenticated, but the employee profile was not found in the database. Run the latest Supabase migration to enable auto-provisioning, then sign in again.
+        </p>
+        <button className="btn btn-outline" onClick={signOut}>← Sign Out</button>
+      </div>
+    );
+  }
 
   // Pending approval
   if (employeeProfile?.status === 'pending') {

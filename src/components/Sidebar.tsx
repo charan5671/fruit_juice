@@ -1,58 +1,11 @@
 'use client';
-import { useStore, type ActiveTab } from '@/lib/store';
+import { useStore } from '@/lib/store';
+import { ROLE_NAV } from '@/lib/rbac';
 import styles from './Sidebar.module.css';
-
-const NAV: Record<string, { label: ActiveTab; icon: string }[]> = {
-    admin: [
-        { label: 'Dashboard', icon: '📊' },
-        { label: 'POS', icon: '🧾' },
-        { label: 'Orders', icon: '📋' },
-        { label: 'Production', icon: '🏭' },
-        { label: 'Inventory', icon: '📦' },
-        { label: 'Procurement', icon: '🚚' },
-        { label: 'Workforce', icon: '👥' },
-        { label: 'Payroll', icon: '💰' },
-        { label: 'Analytics', icon: '📈' },
-        { label: 'Notifications', icon: '🔔' },
-        { label: 'UserManagement', icon: '⚙️' },
-        { label: 'Settings', icon: '👤' },
-    ],
-    manager: [
-        { label: 'Dashboard', icon: '📊' },
-        { label: 'POS', icon: '🧾' },
-        { label: 'Orders', icon: '📋' },
-        { label: 'Production', icon: '🏭' },
-        { label: 'Inventory', icon: '📦' },
-        { label: 'Procurement', icon: '🚚' },
-        { label: 'Workforce', icon: '👥' },
-        { label: 'Notifications', icon: '🔔' },
-        { label: 'Settings', icon: '👤' },
-    ],
-    procurement: [
-        { label: 'Procurement', icon: '🚚' },
-        { label: 'Inventory', icon: '📦' },
-        { label: 'Notifications', icon: '🔔' },
-        { label: 'Settings', icon: '👤' },
-    ],
-    seller: [
-        { label: 'POS', icon: '🧾' },
-        { label: 'Orders', icon: '📋' },
-        { label: 'Production', icon: '🏭' },
-        { label: 'Inventory', icon: '📦' },
-        { label: 'Notifications', icon: '🔔' },
-        { label: 'Settings', icon: '👤' },
-    ],
-    staff: [
-        { label: 'Workforce', icon: '👥' },
-        { label: 'Payroll', icon: '💰' },
-        { label: 'Notifications', icon: '🔔' },
-        { label: 'Settings', icon: '👤' },
-    ],
-};
 
 export default function Sidebar() {
     const { currentRole, activeTab, setActiveTab, mobileMenuOpen, setMobileMenuOpen, currentName } = useStore();
-    const items = NAV[currentRole] || NAV.staff;
+    const items = ROLE_NAV[currentRole] ?? ROLE_NAV.staff;
 
     return (
         <>

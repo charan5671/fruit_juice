@@ -2,10 +2,24 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from './supabase';
+import { canAccessTab, defaultTabForRole } from './rbac';
 
 // ── Types ──
-export type Role = 'admin' | 'manager' | 'procurement' | 'seller' | 'staff';
-export type ActiveTab = 'Dashboard' | 'POS' | 'Orders' | 'Production' | 'Inventory' | 'Procurement' | 'Workforce' | 'Payroll' | 'Analytics' | 'Notifications' | 'Settings' | 'UserManagement';
+export type Role = 'admin' | 'manager' | 'procurement' | 'seller' | 'logistics' | 'staff';
+export type ActiveTab =
+    | 'Dashboard'
+    | 'POS'
+    | 'Orders'
+    | 'Shipping'
+    | 'Production'
+    | 'Inventory'
+    | 'Procurement'
+    | 'Workforce'
+    | 'Payroll'
+    | 'Analytics'
+    | 'Notifications'
+    | 'Settings'
+    | 'UserManagement';
 
 export interface Outlet { id: number; name: string; address: string; phone: string; status: string; }
 export interface Ingredient { id: number; name: string; stock: number; unit: string; threshold: number; outlet_id: number; last_updated: string; }
@@ -81,10 +95,10 @@ export const useStore = create<AppState>()(
             }),
 
             setActiveTab: (t) => {
+        const { currentRole, refreshData } = get();
+        if (!canAccessTab(currentRole, t)) return;
         set({ activeTab: t, mobileMenuOpen: false });
-        // Lazy load data for specific tabs
-        const { refreshData } = get();
-        if (['POS', 'Orders', 'Production', 'Inventory', 'Procurement', 'Workforce', 'Payroll', 'Analytics'].includes(t)) {
+        if (['POS', 'Orders', 'Shipping', 'Production', 'Inventory', 'Procurement', 'Workforce', 'Payroll', 'Analytics'].includes(t)) {
             refreshData([t]);
         }
     },
@@ -100,7 +114,7 @@ export const useStore = create<AppState>()(
         let role = (profile?.role || 'staff') as Role;
         if (user?.email === 'charanmaddirala111@gmail.com') role = 'admin';
 
-        const defaultTab: ActiveTab = role === 'seller' ? 'POS' : role === 'staff' ? 'Workforce' : 'Dashboard';
+        const defaultTab = defaultTabForRole(role);
 
         set({ initialized: true, theme: saved || 'light', currentEmployeeId: profile?.id || null, currentRole: role, currentName: profile?.name || '', activeTab: defaultTab });
 
@@ -138,57 +152,110 @@ export const useStore = create<AppState>()(
         if (get().isRefreshing) return;
         set({ isRefreshing: true });
         try {
-            const fetchers: Record<string, any> = {};
+            const tasks: Array<{ key: keyof AppState; promise: Promise<any> }> = [];
 
             // 1. Critical Core (Always needed for app stability)
             if (!tabs || tabs.includes('Settings')) {
-                fetchers.outlets = supabase.from('outlets').select('id, name, address, phone');
-                fetchers.employees = supabase.from('employees').select('id, name, role, email, outlet_id, status');
+                tasks.push({
+                    key: 'outlets',
+                    promise: supabase.from('outlets').select('id, name, address, phone'),
+                });
+                tasks.push({
+                    key: 'employees',
+                    promise: supabase.from('employees').select('id, name, role, email, outlet_id, status'),
+                });
             }
 
             // 2. High Priority (Directly impact Dashboard/POS)
             if (!tabs || tabs.includes('Inventory') || tabs.includes('POS')) {
-                fetchers.ingredients = supabase.from('ingredients').select('id, name, unit, threshold, stock');
-                fetchers.recipes = supabase.from('recipes').select('id, name, price, ingredients, category');
+                tasks.push({
+                    key: 'ingredients',
+                    promise: supabase.from('ingredients').select('id, name, unit, threshold, stock'),
+                });
+                tasks.push({
+                    key: 'recipes',
+                    promise: supabase.from('recipes').select('id, name, price, ingredients, category'),
+                });
             }
 
             // 3. User Feedback (Notifications)
             if (!tabs || tabs.includes('Notifications') || tabs.includes('Dashboard')) {
-                fetchers.notifications = supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(10);
+                tasks.push({
+                    key: 'notifications',
+                    promise: supabase
+                        .from('notifications')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(10),
+                });
             }
 
             // 4. Historical/Analytics (Heavier - Paged with strict limits)
-            if (!tabs || tabs.includes('Orders') || tabs.includes('Analytics') || tabs.includes('Dashboard')) {
-                fetchers.orders = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(25);
+            if (!tabs || tabs.includes('Orders') || tabs.includes('Shipping') || tabs.includes('Analytics') || tabs.includes('Dashboard')) {
+                tasks.push({
+                    key: 'orders',
+                    promise: supabase
+                        .from('orders')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(25),
+                });
             }
 
             if (!tabs || tabs.includes('Production')) {
-                fetchers.productionLogs = supabase.from('production_logs').select('*').order('created_at', { ascending: false }).limit(20);
+                tasks.push({
+                    key: 'productionLogs',
+                    promise: supabase
+                        .from('production_logs')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(20),
+                });
             }
 
             if (!tabs || tabs.includes('Workforce') || tabs.includes('Payroll')) {
-                fetchers.attendance = supabase.from('attendance').select('*').order('date', { ascending: false }).limit(30);
+                tasks.push({
+                    key: 'attendance',
+                    promise: supabase
+                        .from('attendance')
+                        .select('*')
+                        .order('date', { ascending: false })
+                        .limit(30),
+                });
             }
 
             if (tabs?.includes('Procurement')) {
-                fetchers.purchaseOrders = supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }).limit(25);
-                fetchers.suppliers = supabase.from('suppliers').select('*');
+                tasks.push({
+                    key: 'purchaseOrders',
+                    promise: supabase
+                        .from('purchase_orders')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(25),
+                });
+                tasks.push({
+                    key: 'suppliers',
+                    promise: supabase.from('suppliers').select('*'),
+                });
             }
 
             if (tabs?.includes('Payroll')) {
-                fetchers.payroll = supabase.from('payroll').select('*');
+                tasks.push({
+                    key: 'payroll',
+                    promise: supabase.from('payroll').select('*'),
+                });
             }
 
-            const keys = Object.keys(fetchers);
-            if (keys.length > 0) {
-                const results = await Promise.allSettled(Object.values(fetchers));
+            if (tasks.length > 0) {
+                const results = await Promise.allSettled(tasks.map(t => t.promise));
                 const newState: Partial<AppState> = {};
-                keys.forEach((key, i) => {
-                    const result = results[i] as any;
-                    if (result.status === 'fulfilled' && result.value?.data) {
-                        newState[key as keyof AppState] = result.value.data as any;
-                    }
+
+                results.forEach((result, i) => {
+                    if (result.status !== 'fulfilled') return;
+                    if (result.value?.data == null) return;
+                    newState[tasks[i].key] = result.value.data as any;
                 });
+
                 newState.lastSyncedAt = new Date().toISOString();
                 set(newState as any);
             }
@@ -228,40 +295,33 @@ export const useStore = create<AppState>()(
     },
 
     logProduction: async (log) => {
-        const { currentEmployeeId, currentName } = get();
-        
-        // 1. Insert log
-        const { error } = await supabase.from('production_logs').insert(log);
+        const { currentEmployeeId } = get();
+        if (currentEmployeeId == null) throw new Error('Not authenticated');
+
+        const { error } = await supabase.rpc('log_production_batch', {
+            p_employee_id: currentEmployeeId,
+            p_product_id: log.product_id,
+            p_quantity: log.quantity,
+            p_fruits_used: log.fruits_used,
+            p_notes: log.notes ?? '',
+            p_outlet_id: log.outlet_id,
+        });
         if (error) throw new Error(error.message);
-        
-        // 2. Deduct inventory manually since we bypass create_order RPC
-        for (const fruit of log.fruits_used) {
-            const { data: currentIngredient } = await supabase.from('ingredients').select('stock').eq('id', fruit.ingredientId).single();
-            if (currentIngredient) {
-                await supabase.from('ingredients').update({ stock: +(currentIngredient.stock - fruit.amount).toFixed(2), last_updated: new Date().toISOString() }).eq('id', fruit.ingredientId);
-            }
-        }
-        
-        await supabase.from('audit_log').insert({ action: 'PRODUCTION_LOGGED', user_id: currentEmployeeId, user_name: currentName, module: 'production', details: `Logged ${log.quantity} units of Recipe #${log.product_id}` });
+
         await get().refreshData(['Production', 'Inventory', 'POS']);
     },
 
     deleteProductionLog: async (id, fruitsUsed) => {
-        const { currentEmployeeId, currentName } = get();
-        
-        // 1. Delete log
-        const { error } = await supabase.from('production_logs').delete().eq('id', id);
+        const { currentEmployeeId } = get();
+        if (currentEmployeeId == null) throw new Error('Not authenticated');
+
+        // Ignore `fruitsUsed` from the client and restore from DB for consistency.
+        const { error } = await supabase.rpc('delete_production_log_and_restore', {
+            p_employee_id: currentEmployeeId,
+            p_log_id: id,
+        });
         if (error) throw new Error(error.message);
-        
-        // 2. Restore inventory
-        for (const fruit of fruitsUsed) {
-            const { data: currentIngredient } = await supabase.from('ingredients').select('stock').eq('id', fruit.ingredientId).single();
-            if (currentIngredient) {
-                await supabase.from('ingredients').update({ stock: +(currentIngredient.stock + fruit.amount).toFixed(2), last_updated: new Date().toISOString() }).eq('id', fruit.ingredientId);
-            }
-        }
-        
-        await supabase.from('audit_log').insert({ action: 'PRODUCTION_DELETED', user_id: currentEmployeeId, user_name: currentName, module: 'production', details: `Deleted log #${id} and restored inventory.` });
+
         await get().refreshData(['Production', 'Inventory', 'POS']);
     },
 

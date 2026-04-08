@@ -21,7 +21,8 @@ export default function Login() {
     // Detect recovery link hash or forced logout reason
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            if (window.location.hash === '#reset') {
+            const hash = window.location.hash;
+            if (hash === '#reset' || hash.includes('type=recovery') || hash.includes('access_token=')) {
                 setMode('reset');
                 setSuccess('✅ Recovery link verified. Please set your new password.');
             }
@@ -35,6 +36,9 @@ export default function Login() {
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
+        setSuccess('');
+        setLoading(true);
         try {
             const err = await signIn(email, password);
             if (err) {
@@ -57,6 +61,9 @@ export default function Login() {
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
+        setSuccess('');
+        setLoading(true);
         try {
             const { error: regErr } = await signUp(email, password, name, role);
             if (regErr) {
@@ -87,6 +94,9 @@ export default function Login() {
     const handleForgot = async (e: React.FormEvent) => {
         e.preventDefault();
         if (resetCooldown > 0) return;
+        setError('');
+        setSuccess('');
+        setLoading(true);
         try {
             const err = await forgotPassword(email);
             if (err) setError(err.message);
@@ -240,6 +250,7 @@ export default function Login() {
                             <label>Requested Role</label>
                             <select className="input" value={role} onChange={e => setRole(e.target.value)}>
                                 <option value="seller">Seller / POS</option>
+                                <option value="logistics">Shipping / Logistics</option>
                                 <option value="manager">Inventory Manager</option>
                                 <option value="procurement">Procurement Officer</option>
                                 <option value="staff">Staff Member</option>

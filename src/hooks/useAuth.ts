@@ -27,14 +27,19 @@ export function useAuth() {
                         employeeProfile: profile, 
                         loading: true 
                     };
-                } catch(e) {}
+                } catch {}
             }
         }
         return { session: null, user: null, employeeProfile: null, loading: true };
     });
 
     const loadProfile = useCallback(async (userId: string) => {
-        const { data } = await supabase.from('employees').select('id, name, role, email, phone, outlet_id, status').eq('auth_uid', userId).single();
+        const { data, error } = await supabase
+            .from('employees')
+            .select('id, name, role, email, phone, outlet_id, status')
+            .eq('auth_uid', userId)
+            .maybeSingle();
+        if (error) return null;
         return data as EmployeeProfile | null;
     }, []);
 
@@ -46,14 +51,14 @@ export function useAuth() {
             if (!user) return;
 
             const serverDeviceId = user.user_metadata?.current_device_id;
+            const deviceBound = localStorage.getItem('fjc-device-bound') === '1';
             const localDeviceId = localStorage.getItem('fjc-device-id');
 
             // If the server has a device ID mapped, and we locally don't match, force ejection.
-            if (serverDeviceId && localDeviceId && serverDeviceId !== localDeviceId) {
+            if (deviceBound && serverDeviceId && localDeviceId && serverDeviceId !== localDeviceId) {
                 localStorage.setItem('fjc-logout-reason', 'Concurrent session detected. Your account has been securely signed out because it was accessed from another device.');
                 await supabase.auth.signOut();
                 setAuth({ session: null, user: null, employeeProfile: null, loading: false });
-                if (typeof window !== 'undefined') window.location.reload();
             }
         };
 
@@ -65,7 +70,7 @@ export function useAuth() {
                 // 1. Instant Cache Check
                 const cached = localStorage.getItem('fjc-profile');
                 if (cached) {
-                    try { profile = JSON.parse(cached); } catch (e) { }
+                    try { profile = JSON.parse(cached); } catch { }
                 }
 
                 // 2. Unblock UI Immediately (Critical Path)
@@ -82,6 +87,7 @@ export function useAuth() {
             } else {
                 localStorage.removeItem('fjc-profile');
                 if (typeof window !== 'undefined') localStorage.removeItem('fjc-device-id');
+                if (typeof window !== 'undefined') localStorage.removeItem('fjc-device-bound');
                 useStore.getState().resetStore();
                 setAuth({ session: null, user: null, employeeProfile: null, loading: false });
             }
@@ -95,7 +101,7 @@ export function useAuth() {
             if (session?.user) {
                 const cached = localStorage.getItem('fjc-profile');
                 if (cached) {
-                    try { profile = JSON.parse(cached); } catch (e) { }
+                    try { profile = JSON.parse(cached); } catch { }
                 }
                 setAuth({ session, user: session.user, employeeProfile: profile, loading: false });
 
@@ -110,9 +116,10 @@ export function useAuth() {
                 // CRITICAL: Properly clean up on sign-out
                 localStorage.removeItem('fjc-profile');
                 localStorage.removeItem('fjc-device-id');
+                localStorage.removeItem('fjc-device-bound');
                 try {
                     useStore.getState().resetStore();
-                } catch(e) {}
+                } catch {}
                 setAuth({ session: null, user: null, employeeProfile: null, loading: false });
             }
         });
@@ -124,20 +131,28 @@ export function useAuth() {
     }, [loadProfile]);
 
     const signIn = async (email: string, password: string) => {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const normalizedEmail = email.trim().toLowerCase();
+        const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
         if (!error && data.user) {
             // Generate deterministic device session binding
             const deviceId = crypto.randomUUID();
-            localStorage.setItem('fjc-device-id', deviceId);
-            // Non-blocking upload to sync session dominance
-            supabase.auth.updateUser({ data: { current_device_id: deviceId } }).catch(console.error);
+            // Only enforce the device binding if we successfully update metadata.
+            const { error: updateErr } = await supabase.auth.updateUser({ data: { current_device_id: deviceId } });
+            if (!updateErr) {
+                localStorage.setItem('fjc-device-id', deviceId);
+                localStorage.setItem('fjc-device-bound', '1');
+            } else {
+                localStorage.removeItem('fjc-device-id');
+                localStorage.removeItem('fjc-device-bound');
+            }
         }
         return error;
     };
 
     const signUp = async (email: string, password: string, name: string, role: string) => {
+        const normalizedEmail = email.trim().toLowerCase();
         const { data, error } = await supabase.auth.signUp({
-            email,
+            email: normalizedEmail,
             password,
             options: {
                 data: { name, role },
@@ -152,7 +167,8 @@ export function useAuth() {
     };
 
     const forgotPassword = async (email: string) => {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const normalizedEmail = email.trim().toLowerCase();
+        const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
             redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/#reset` : undefined,
         });
         return error;
@@ -179,6 +195,7 @@ export function useAuth() {
         if (typeof window !== 'undefined') {
             localStorage.removeItem('fjc-profile');
             localStorage.removeItem('fjc-device-id');
+            localStorage.removeItem('fjc-device-bound');
         }
         // Reset the Zustand store directly (no dynamic import flakiness)
         try {
